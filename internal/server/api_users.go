@@ -1,12 +1,53 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"strings"
+	"time"
 )
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, principalFrom(r))
+}
+
+func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		CurrentPassword string `json:"current_password"`
+		Password        string `json:"password"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, statusForDecode(err), "bad request")
+		return
+	}
+	if !validPassword(body.Password) {
+		writeError(w, http.StatusBadRequest, "password must be 8 to 72 characters")
+		return
+	}
+	me := principalFrom(r)
+	ip := clientIP(r, s.trustProxy)
+	if s.login.blocked(ip, 10, time.Minute) {
+		writeError(w, http.StatusTooManyRequests, "too many attempts")
+		return
+	}
+	if _, err := s.store.Authenticate(me.Username, body.CurrentPassword); err != nil {
+		if errors.Is(err, ErrUnauthorized) {
+			s.login.hit(ip)
+			writeError(w, http.StatusBadRequest, "wrong password")
+			return
+		}
+		writeStoreError(w, err)
+		return
+	}
+	if body.Password == body.CurrentPassword {
+		writeError(w, http.StatusBadRequest, "choose a different password")
+		return
+	}
+	if err := s.store.SetPassword(me.ID, body.Password); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, me)
 }
 
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Account · Dlog</title>
+  <link rel="stylesheet" href="/bootstrap.min.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body class="d-flex flex-column min-vh-100">
+  <header class="border-bottom px-3 py-2 d-flex align-items-center gap-2">
+    <a class="brand d-flex align-items-center gap-2 fw-semibold text-decoration-none" href="/">
+      <span class="lamp" aria-hidden="true"></span>
+      <span>Dlog</span>
+    </a>
+    <span class="text-secondary">Account</span>
+    <div class="ms-auto d-flex gap-2">
+      <a class="btn btn-sm btn-outline-light" href="/">Logs</a>
+      <a id="admin-link" class="btn btn-sm btn-outline-light" href="/admin" hidden>Admin</a>
+      <button type="button" id="logout" class="btn btn-sm btn-outline-secondary">Log out</button>
+    </div>
+  </header>
+  <main class="container py-4">
+    <div class="account-panel">
+      <h1 class="h3">Account</h1>
+      <p id="account-summary" class="text-secondary">Signed in</p>
+      <form id="change-password" class="card">
+        <div class="card-body">
+          <h2 class="h5">Change password</h2>
+          <p class="text-secondary small">A password is 8 to 72 characters. This replaces the password for your username. Sessions that are already signed in stay signed in.</p>
+          <label class="form-label" for="current-password">Current password</label>
+          <input id="current-password" class="form-control" name="current_password" type="password" autocomplete="current-password" required>
+          <label class="form-label mt-3" for="new-password">New password</label>
+          <input id="new-password" class="form-control" name="password" type="password" autocomplete="new-password" required>
+          <label class="form-label mt-3" for="confirm-password">Confirm new password</label>
+          <input id="confirm-password" class="form-control" name="confirm_password" type="password" autocomplete="new-password" required>
+          <button type="submit" class="btn btn-warning mt-3">Change password</button>
+        </div>
+      </form>
+    </div>
+  </main>
+  <div class="toast-container position-fixed bottom-0 start-50 translate-middle-x p-3">
+    <div id="toast" class="toast align-items-center text-bg-dark border" role="status" aria-live="polite" aria-atomic="true">
+      <div id="toast-body" class="toast-body"></div>
+    </div>
+  </div>
+  <script src="/bootstrap.bundle.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

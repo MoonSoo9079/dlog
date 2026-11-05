@@ -23,6 +23,9 @@ if (document.getElementById("admin-hosts")) {
 if (document.getElementById("accounts")) {
   initAccounts();
 }
+if (document.getElementById("change-password")) {
+  initAccount();
+}
 
 function initApp() {
   const hostsEl = document.getElementById("hosts");
@@ -652,6 +655,36 @@ function initAdmin() {
       toast(err.message);
     }
   }
+}
+
+function initAccount() {
+  document.getElementById("logout").addEventListener("click", async () => {
+    try { await api("/api/v1/logout", { method: "POST", body: "{}" }); } catch (e) { /* redirect anyway */ }
+    location.href = "/login";
+  });
+  api("/api/v1/me").then((me) => {
+    const summary = document.getElementById("account-summary");
+    if (summary && me) summary.textContent = me.username + " · " + (me.role === "admin" ? "Admin" : "User");
+    const admin = document.getElementById("admin-link");
+    if (admin && me && me.role === "admin") admin.hidden = false;
+  }).catch(() => {});
+  document.getElementById("change-password").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const current = document.getElementById("current-password").value;
+    const next = document.getElementById("new-password").value;
+    const again = document.getElementById("confirm-password").value;
+    if (next !== again) {
+      toast("Passwords do not match");
+      return;
+    }
+    try {
+      await api("/api/v1/me", { method: "PATCH", body: JSON.stringify({ current_password: current, password: next }) });
+      e.target.reset();
+      toast("Password updated");
+    } catch (err) {
+      toast(err.message);
+    }
+  });
 }
 
 function initAccounts() {

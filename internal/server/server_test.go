@@ -153,7 +153,7 @@ func TestHTTPAuthIngestAndUI(t *testing.T) {
 	}
 	page, _ = io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 200 || !strings.Contains(string(page), "Dlog") || !strings.Contains(string(page), "/app.js") || !strings.Contains(string(page), "/bootstrap.min.css") || strings.Contains(string(page), `id="drawer"`) || strings.Contains(string(page), `id="manage"`) {
+	if res.StatusCode != 200 || !strings.Contains(string(page), "Dlog") || !strings.Contains(string(page), "/app.js") || !strings.Contains(string(page), "/bootstrap.min.css") || !strings.Contains(string(page), `href="/account"`) || strings.Contains(string(page), `id="drawer"`) || strings.Contains(string(page), `id="manage"`) {
 		t.Fatalf("console: %d", res.StatusCode)
 	}
 
@@ -500,6 +500,71 @@ func TestAccounts(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusForbidden {
 		t.Fatalf("demoted admin: %d", res.StatusCode)
+	}
+}
+
+func TestChangePassword(t *testing.T) {
+	ts, _, _ := testServer(t)
+	client := noRedirect(t)
+
+	res := do(t, client, http.MethodGet, ts.URL+"/account", "", "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusFound || !strings.Contains(res.Header.Get("Location"), "/login") {
+		t.Fatalf("account redirect: %d %s", res.StatusCode, res.Header.Get("Location"))
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/me", "", `{"current_password":"admin-test-password","password":"admin-test-password-2"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("anonymous change: %d", res.StatusCode)
+	}
+
+	user := login(t, client, ts.URL, "admin", testAdminPassword)
+	res = do(t, client, http.MethodGet, ts.URL+"/account", user, "")
+	page, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || !strings.Contains(string(page), "Current password") || !strings.Contains(string(page), "Change password") {
+		t.Fatalf("account page: %d", res.StatusCode)
+	}
+
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/me", user, `{"current_password":"wrong-password","password":"admin-test-password-2"}`)
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "wrong password") {
+		t.Fatalf("wrong current: %d %s", res.StatusCode, body)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/me", user, `{"current_password":"`+testAdminPassword+`","password":"short"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("short password: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/me", user, `{"current_password":"`+testAdminPassword+`","password":"`+testAdminPassword+`"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("same password: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/me", user, `{"current_password":"`+testAdminPassword+`","password":"admin-test-password-2","extra":1}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unknown field: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/me", user, `{"current_password":"`+testAdminPassword+`","password":"admin-test-password-2"}`)
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"username":"admin"`) {
+		t.Fatalf("change: %d %s", res.StatusCode, body)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/me", user, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("old session: %d", res.StatusCode)
+	}
+	if got := login(t, client, ts.URL, "admin", "admin-test-password-2"); !strings.HasPrefix(got, "ses_") {
+		t.Fatalf("new password: %s", got)
+	}
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/login", "", `{"username":"admin","password":"`+testAdminPassword+`"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("old password still works: %d", res.StatusCode)
 	}
 }
 

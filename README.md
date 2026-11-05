@@ -91,6 +91,7 @@ The console is served by `dlog-server`.
 - Hosts on the left, container filters across the top, log lines in the main pane.
 - Search the host list by hostname or group name. Click a group header to collapse it. A search shows matches even inside a collapsed group. The line search matches text literally. `%` and `_` are not wildcards.
 - Follow tails new lines. Older loads the previous page.
+- Account opens a page where the signed-in user changes their own password. The current password is required.
 - The host list on the left is for reading logs. Hosts appear there after an agent registers.
 - Admin opens a page for hosts, groups, and accounts. There you move a host into one group, disable, enable, or delete a host, and create, rename, or delete groups. You also create accounts and set each one to User or Admin. Users can read logs. Admins can manage hosts, groups, and accounts. An admin cannot delete the signed-in account or remove the last admin.
 
@@ -108,6 +109,7 @@ Deleting a host deletes its stored logs. The agent will register that hostname a
 | POST | `/api/v1/heartbeat` | host token |
 | POST | `/api/v1/login` | username and password, sets the session cookie |
 | GET | `/api/v1/me` | signed-in account. Body is `{"id","username","role","created_at"}`. |
+| PATCH | `/api/v1/me` | signed-in account, body `{"current_password","password"}`. Changes that account's password. A wrong current password is 400. |
 | GET | `/api/v1/hosts` | signed-in account. Body is `{"hosts","groups"}`. Each host has `group_id` (`""` when ungrouped). |
 | GET | `/api/v1/containers?host_id=` | signed-in account |
 | GET | `/api/v1/logs?host_id=&container_id=&stream=&q=&limit=&after_id=&before_id=` | signed-in account |

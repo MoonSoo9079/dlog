@@ -96,6 +96,8 @@ body {
 
 .account-password { width: 12rem; max-width: 100%; }
 
+.account-panel { max-width: 32rem; }
+
 .admin-host .form-select,
 .admin-group-select {
   width: auto;

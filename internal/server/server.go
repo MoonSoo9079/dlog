@@ -46,6 +46,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /api/v1/meta", s.operatorJSON(s.handleMeta))
 	mux.HandleFunc("GET /api/v1/me", s.operatorJSON(s.handleMe))
+	mux.HandleFunc("PATCH /api/v1/me", s.operatorJSON(s.handleUpdateMe))
 	mux.HandleFunc("GET /api/v1/hosts", s.operatorJSON(s.handleListHosts))
 	mux.HandleFunc("GET /api/v1/containers", s.operatorJSON(s.handleContainers))
 	mux.HandleFunc("GET /api/v1/logs", s.operatorJSON(s.handleLogs))
@@ -65,6 +66,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /admin", s.handleAdmin)
+	mux.HandleFunc("GET /account", s.handleAccount)
 	mux.HandleFunc("GET /login", s.handleLoginPage)
 	mux.HandleFunc("GET /app.css", s.handleCSS)
 	mux.HandleFunc("GET /app.js", s.handleJS)

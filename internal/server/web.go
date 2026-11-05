@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-//go:embed web/index.html web/login.html web/admin.html web/forbidden.html web/app.css web/app.js web/bootstrap.min.css web/bootstrap.bundle.min.js
+//go:embed web/index.html web/login.html web/admin.html web/account.html web/forbidden.html web/app.css web/app.js web/bootstrap.min.css web/bootstrap.bundle.min.js
 var webFS embed.FS
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -29,6 +29,14 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	serveAsset(w, "web/admin.html", "text/html; charset=utf-8")
+}
+
+func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.principal(w, r); !ok {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+	serveAsset(w, "web/account.html", "text/html; charset=utf-8")
 }
 
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
