@@ -7,8 +7,8 @@
   <link rel="stylesheet" href="/bootstrap.min.css">
   <link rel="stylesheet" href="/app.css">
 </head>
-<body class="d-flex flex-column min-vh-100">
-  <header class="border-bottom px-3 py-2 d-flex align-items-center gap-2">
+<body class="d-flex flex-column vh-100">
+  <header class="border-bottom px-3 py-2 d-flex align-items-center gap-2 flex-shrink-0">
     <a class="brand d-flex align-items-center gap-2 fw-semibold text-decoration-none" href="/">
       <span class="lamp" aria-hidden="true"></span>
       <span>Dlog</span>
@@ -19,36 +19,73 @@
       <button type="button" id="logout" class="btn btn-sm btn-outline-secondary">Log out</button>
     </div>
   </header>
-  <main class="admin-wrap container py-4">
-    <h1 class="h3">Accounts</h1>
-    <p class="text-secondary">Admins manage hosts, groups, and accounts. Users can read logs. A username starts with a letter or digit and may use letters, digits, <span class="font-monospace">.</span>, <span class="font-monospace">_</span>, and <span class="font-monospace">-</span>. A password is 8 to 72 characters.</p>
-    <form id="create-user" class="card mb-4">
-      <div class="card-body">
-        <h2 class="h5">New account</h2>
-        <div class="row g-2 align-items-end">
-          <div class="col-sm">
-            <label class="form-label" for="new-username">Username</label>
-            <input id="new-username" class="form-control" name="username" autocomplete="off" maxlength="64" required>
-          </div>
-          <div class="col-sm">
-            <label class="form-label" for="new-password">Password</label>
-            <input id="new-password" class="form-control" name="password" type="password" autocomplete="new-password" required>
-          </div>
-          <div class="col-sm-3">
-            <label class="form-label" for="new-role">Permission</label>
-            <select id="new-role" class="form-select" name="role">
-              <option value="user" selected>User</option>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
-          <div class="col-sm-auto">
-            <button type="submit" class="btn btn-warning">Create</button>
-          </div>
-        </div>
+  <div class="admin-shell flex-grow-1">
+    <nav class="admin-nav" aria-label="Admin">
+      <button type="button" id="nav-hosts" class="admin-nav-btn is-active" data-section="hosts">Hosts</button>
+      <button type="button" id="nav-groups" class="admin-nav-btn" data-section="groups">Groups</button>
+      <button type="button" id="nav-accounts" class="admin-nav-btn" data-section="accounts">Accounts</button>
+    </nav>
+    <main class="admin-main flex-grow-1 overflow-auto">
+      <div class="admin-wrap px-3 px-md-4 py-4">
+        <section id="panel-hosts">
+          <h1 class="h3">Hosts</h1>
+          <p class="text-secondary">Agents that hold this server's certificate register themselves. The hostname is the host. Put a host in one group to organize the log list. Disable a host to stop it.</p>
+          <label class="visually-hidden" for="host-admin-q">Search hosts</label>
+          <input id="host-admin-q" class="form-control form-control-sm mb-3" type="search" placeholder="Search hosts" autocomplete="off" spellcheck="false">
+          <div id="admin-hosts" class="list-group"></div>
+        </section>
+        <section id="panel-groups" hidden>
+          <h1 class="h3">Groups</h1>
+          <p class="text-secondary">A group is a folder in the log list. A host is in one group. Deleting a group leaves its hosts ungrouped. A name starts with a letter or digit and may use letters, digits, spaces, <span class="font-monospace">.</span>, <span class="font-monospace">_</span>, and <span class="font-monospace">-</span>.</p>
+          <form id="create-group" class="card mb-4">
+            <div class="card-body">
+              <h2 class="h5">New group</h2>
+              <div class="row g-2 align-items-end">
+                <div class="col-sm">
+                  <label class="form-label" for="group-name">Name</label>
+                  <input id="group-name" class="form-control" name="name" maxlength="64" autocomplete="off" spellcheck="false" required>
+                </div>
+                <div class="col-sm-auto">
+                  <button type="submit" class="btn btn-warning">Create</button>
+                </div>
+              </div>
+            </div>
+          </form>
+          <div id="admin-groups" class="list-group"></div>
+        </section>
+        <section id="panel-accounts" hidden>
+          <h1 class="h3">Accounts</h1>
+          <p class="text-secondary">Users can read logs. Admins can also manage hosts, groups, and accounts. A username starts with a letter or digit and may use letters, digits, <span class="font-monospace">.</span>, <span class="font-monospace">_</span>, and <span class="font-monospace">-</span>. A password is 8 to 72 characters.</p>
+          <form id="create-user" class="card mb-4">
+            <div class="card-body">
+              <h2 class="h5">New account</h2>
+              <div class="row g-2 align-items-end">
+                <div class="col-sm">
+                  <label class="form-label" for="new-username">Username</label>
+                  <input id="new-username" class="form-control" name="username" autocomplete="off" maxlength="64" required>
+                </div>
+                <div class="col-sm">
+                  <label class="form-label" for="new-password">Password</label>
+                  <input id="new-password" class="form-control" name="password" type="password" autocomplete="new-password" required>
+                </div>
+                <div class="col-sm-3">
+                  <label class="form-label" for="new-role">Permission</label>
+                  <select id="new-role" class="form-select" name="role">
+                    <option value="user" selected>User</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+                <div class="col-sm-auto">
+                  <button type="submit" class="btn btn-warning">Create</button>
+                </div>
+              </div>
+            </div>
+          </form>
+          <div id="accounts" class="list-group"></div>
+        </section>
       </div>
-    </form>
-    <div id="accounts" class="list-group"></div>
-  </main>
+    </main>
+  </div>
   <div class="toast-container position-fixed bottom-0 start-50 translate-middle-x p-3">
     <div id="toast" class="toast align-items-center text-bg-dark border" role="status" aria-live="polite" aria-atomic="true">
       <div id="toast-body" class="toast-body"></div>

@@ -55,9 +55,53 @@ body {
 
 .login-card { width: min(420px, 100%); }
 
-.admin-wrap { max-width: 920px; }
+.admin-shell { display: flex; flex-direction: column; min-height: 0; }
+
+.admin-nav {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bs-tertiary-bg);
+  border-bottom: 1px solid var(--bs-border-color);
+}
+
+.admin-nav-btn {
+  -webkit-appearance: none;
+  appearance: none;
+  border: 0;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--bs-secondary-color);
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.25;
+  padding: 0.45rem 0.8rem;
+  text-align: left;
+}
+
+.admin-nav-btn:hover,
+.admin-nav-btn:focus-visible { color: var(--bs-emphasis-color); }
+
+.admin-nav-btn:focus-visible {
+  outline: 2px solid #e4b15a;
+  outline-offset: 2px;
+}
+
+.admin-nav-btn.is-active {
+  background: #241c10;
+  color: var(--bs-emphasis-color);
+}
+
+.admin-wrap { max-width: 1080px; }
 
 .account-password { width: 12rem; max-width: 100%; }
+
+.admin-host .form-select,
+.admin-group-select {
+  width: auto;
+  min-width: 10rem;
+  max-width: 100%;
+}
 
 .host-pane {
   background: var(--bs-tertiary-bg);
@@ -136,13 +180,21 @@ body {
   text-transform: none;
 }
 
-#drawer-hosts .form-select {
-  width: auto;
-  min-width: 8.5rem;
-  flex: 1 1 8.5rem;
-}
-
 @media (min-width: 768px) {
+  .admin-shell { flex-direction: row; }
+
+  .admin-nav {
+    flex: 0 0 12rem;
+    flex-direction: column;
+    width: 12rem;
+    padding: 1rem 0.75rem;
+    border-bottom: 0;
+    border-right: 1px solid var(--bs-border-color);
+  }
+
+  .admin-nav-btn { width: 100%; }
+
+
   .host-pane {
     width: 280px;
     flex: 0 0 280px;
@@ -209,13 +261,10 @@ body {
 .log-line.stderr { box-shadow: inset 2px 0 0 #e08b72; }
 .log-line.stderr .msg { color: #f0c2b6; }
 
-.offcanvas { --bs-offcanvas-width: min(480px, 100vw); }
-
 @media (max-width: 767.98px) {
   body.vh-100 { height: 100vh; height: 100dvh; }
   .host-pane { max-height: 13.5rem; }
   .log { min-height: 0; }
-  .offcanvas { --bs-offcanvas-width: 100vw; }
   .log-line {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:

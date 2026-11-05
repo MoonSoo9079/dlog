@@ -153,7 +153,7 @@ func TestHTTPAuthIngestAndUI(t *testing.T) {
 	}
 	page, _ = io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 200 || !strings.Contains(string(page), "Dlog") || !strings.Contains(string(page), "/app.js") || !strings.Contains(string(page), "/bootstrap.min.css") {
+	if res.StatusCode != 200 || !strings.Contains(string(page), "Dlog") || !strings.Contains(string(page), "/app.js") || !strings.Contains(string(page), "/bootstrap.min.css") || strings.Contains(string(page), `id="drawer"`) || strings.Contains(string(page), `id="manage"`) {
 		t.Fatalf("console: %d", res.StatusCode)
 	}
 
@@ -381,7 +381,7 @@ func TestAccounts(t *testing.T) {
 	res = do(t, client, http.MethodGet, ts.URL+"/admin", admin, "")
 	page, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 200 || !strings.Contains(string(page), "New account") {
+	if res.StatusCode != 200 || !strings.Contains(string(page), "New account") || !strings.Contains(string(page), `id="admin-hosts"`) || !strings.Contains(string(page), `id="panel-groups"`) || strings.Contains(string(page), "offcanvas") {
 		t.Fatalf("admin page: %d", res.StatusCode)
 	}
 

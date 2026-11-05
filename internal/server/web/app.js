@@ -17,6 +17,9 @@ if (loginError && new URLSearchParams(location.search).get("error")) {
 if (document.getElementById("hosts")) {
   initApp();
 }
+if (document.getElementById("admin-hosts")) {
+  initAdmin();
+}
 if (document.getElementById("accounts")) {
   initAccounts();
 }
@@ -31,13 +34,8 @@ function initApp() {
   const qInput = document.getElementById("q");
   const streamSel = document.getElementById("stream");
   const followBtn = document.getElementById("follow");
-  const drawer = document.getElementById("drawer");
-  const drawerBody = document.getElementById("drawer-body");
-  const offcanvas = bootstrap.Offcanvas.getOrCreateInstance(drawer);
-
   let hosts = [];
   let groups = [];
-  let drawerQuery = "";
   let collapsed = loadCollapsed();
   let containers = [];
   let lines = [];
@@ -62,8 +60,6 @@ function initApp() {
     followBtn.setAttribute("aria-pressed", follow ? "true" : "false");
   });
   document.getElementById("older").addEventListener("click", loadOlder);
-  document.getElementById("manage").addEventListener("click", openDrawer);
-  document.getElementById("drawer-close").addEventListener("click", closeDrawer);
   streamSel.addEventListener("change", () => { stream = streamSel.value; reload(); });
   let qTimer = 0;
   qInput.addEventListener("input", () => {
@@ -81,7 +77,6 @@ function initApp() {
       e.preventDefault();
       qInput.focus();
     }
-    if (e.key === "Escape") closeDrawer();
   });
 
   refreshHosts();
@@ -93,7 +88,6 @@ function initApp() {
   setInterval(() => { if (!document.hidden) pollLogs(); }, 1000);
   api("/api/v1/me").then((me) => {
     if (!me || me.role !== "admin") return;
-    document.getElementById("manage").hidden = false;
     document.getElementById("admin-link").hidden = false;
   }).catch(() => {});
 
@@ -393,212 +387,6 @@ function initApp() {
     return "/api/v1/logs?" + p.toString();
   }
 
-  function openDrawer() {
-    paintDrawer();
-    offcanvas.show();
-  }
-  function closeDrawer() { offcanvas.hide(); }
-
-  function paintDrawer() {
-    const prev = document.getElementById("drawer-q");
-    const refocus = !!(prev && document.activeElement === prev);
-    const start = refocus ? prev.selectionStart : 0;
-    const end = refocus ? prev.selectionEnd : 0;
-
-    drawerBody.replaceChildren();
-    drawerBody.append(el("p", { class: "text-secondary small" }, ["Agents that hold this server's certificate register themselves. The hostname is the host. Put a host in one group to organize the list. Disable a host to stop it."]));
-
-    drawerBody.append(el("h3", { class: "h6 mt-3 mb-2" }, ["Groups"]));
-    const createInput = el("input", {
-      id: "group-name",
-      class: "form-control form-control-sm",
-      type: "text",
-      maxlength: "64",
-      placeholder: "New group",
-      autocomplete: "off",
-      spellcheck: "false",
-      "aria-label": "New group name",
-    });
-    const createForm = el("form", { class: "d-flex gap-2 mb-2" }, [
-      createInput,
-      el("button", { type: "submit", class: "btn btn-sm btn-warning text-nowrap" }, ["Create"]),
-    ]);
-    createForm.addEventListener("submit", (e) => {
-      e.preventDefault();
-      createGroup(createInput.value);
-    });
-    drawerBody.append(createForm);
-
-    const groupList = el("div", { class: "list-group mb-3" });
-    if (!groups.length) groupList.append(el("div", { class: "list-group-item text-secondary small" }, ["No groups yet."]));
-    for (const g of groups) groupList.append(groupRow(g));
-    drawerBody.append(groupList);
-
-    drawerBody.append(el("h3", { class: "h6 mb-2" }, ["Hosts"]));
-    const filter = el("input", {
-      id: "drawer-q",
-      class: "form-control form-control-sm mb-2",
-      type: "search",
-      placeholder: "Search hosts",
-      autocomplete: "off",
-      spellcheck: "false",
-      "aria-label": "Search hosts in this panel",
-    });
-    filter.value = drawerQuery;
-    filter.addEventListener("input", () => {
-      drawerQuery = filter.value;
-      paintDrawerHosts();
-    });
-    drawerBody.append(filter);
-    drawerBody.append(el("div", { id: "drawer-hosts", class: "list-group" }));
-    paintDrawerHosts();
-
-    if (refocus) {
-      const again = document.getElementById("drawer-q");
-      again.focus();
-      again.setSelectionRange(start, end);
-    }
-  }
-
-  function groupRow(g) {
-    const row = el("div", { class: "list-group-item d-flex align-items-center gap-2" });
-    const renameBtn = el("button", { type: "button", class: "btn btn-sm btn-outline-secondary" }, ["Rename"]);
-    const deleteBtn = el("button", { type: "button", class: "btn btn-sm btn-outline-danger" }, ["Delete"]);
-    renameBtn.addEventListener("click", () => beginRename(g, row));
-    deleteBtn.addEventListener("click", () => deleteGroup(g));
-    row.append(
-      el("div", { class: "min-w-0 flex-grow-1" }, [
-        el("div", { class: "fw-semibold text-truncate" }, [g.name]),
-        el("div", { class: "text-secondary small" }, [g.host_count === 1 ? "1 host" : g.host_count + " hosts"]),
-      ]),
-      el("div", { class: "btn-group flex-shrink-0" }, [renameBtn, deleteBtn]),
-    );
-    return row;
-  }
-
-  function beginRename(g, row) {
-    const input = el("input", {
-      class: "form-control form-control-sm",
-      type: "text",
-      maxlength: "64",
-      autocomplete: "off",
-      spellcheck: "false",
-      "aria-label": "Group name",
-    });
-    input.value = g.name;
-    const save = el("button", { type: "button", class: "btn btn-sm btn-warning" }, ["Save"]);
-    const cancel = el("button", { type: "button", class: "btn btn-sm btn-outline-secondary" }, ["Cancel"]);
-    save.addEventListener("click", () => renameGroup(g, input.value));
-    cancel.addEventListener("click", () => paintDrawer());
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        renameGroup(g, input.value);
-      } else if (e.key === "Escape") {
-        e.stopPropagation();
-        paintDrawer();
-      }
-    });
-    row.replaceChildren(el("div", { class: "d-flex gap-2 w-100" }, [input, save, cancel]));
-    input.classList.add("flex-grow-1");
-    input.focus();
-    input.select();
-  }
-
-  function paintDrawerHosts() {
-    const list = document.getElementById("drawer-hosts");
-    if (!list) return;
-    const query = drawerQuery.trim().toLowerCase();
-    const visible = hosts.filter((h) => matchesHost(h, query));
-    list.replaceChildren();
-    if (!visible.length) {
-      list.append(el("div", { class: "list-group-item text-secondary small" }, [hosts.length ? "No matching hosts." : "None yet."]));
-      return;
-    }
-    for (const h of visible) {
-      const current = h.group_id || "";
-      const sel = el("select", { class: "form-select form-select-sm", "aria-label": "Group for " + h.hostname });
-      const none = el("option", { value: "" }, ["Ungrouped"]);
-      if (!current) none.selected = true;
-      sel.append(none);
-      for (const g of groups) {
-        const opt = el("option", { value: g.id }, [g.name]);
-        if (g.id === current) opt.selected = true;
-        sel.append(opt);
-      }
-      sel.addEventListener("change", () => assignGroup(h, sel.value));
-      const actions = [
-        el("button", { type: "button", class: "btn btn-sm btn-outline-danger", onclick: () => removeHost(h) }, ["Delete"]),
-      ];
-      if (h.status === "enabled") actions.unshift(el("button", { type: "button", class: "btn btn-sm btn-outline-warning", onclick: () => setStatus(h, "disable") }, ["Disable"]));
-      else actions.unshift(el("button", { type: "button", class: "btn btn-sm btn-outline-success", onclick: () => setStatus(h, "enable") }, ["Enable"]));
-      list.append(el("div", { class: "list-group-item" }, [
-        el("div", { class: "d-flex align-items-center gap-2 min-w-0" }, [
-          el("span", { class: "fw-semibold text-truncate" }, [h.hostname]),
-          statusBadge(h),
-        ]),
-        el("div", { class: "text-secondary small mt-1 mb-2" }, ["seen " + ago(h.last_seen_at) + (h.dropped ? " · dropped " + h.dropped : "") + " · " + h.container_count + " containers"]),
-        el("div", { class: "d-flex flex-wrap align-items-center gap-2" }, [
-          sel,
-          el("div", { class: "btn-group" }, actions),
-        ]),
-      ]));
-    }
-  }
-
-  async function createGroup(name) {
-    try {
-      await api("/api/v1/admin/groups", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
-      await refreshHosts();
-      paintDrawer();
-    } catch (e) { toast(e.message); }
-  }
-
-  async function renameGroup(g, name) {
-    try {
-      await api("/api/v1/admin/groups/" + encodeURIComponent(g.id), { method: "PATCH", body: JSON.stringify({ name: name.trim() }) });
-      await refreshHosts();
-      paintDrawer();
-    } catch (e) { toast(e.message); }
-  }
-
-  async function deleteGroup(g) {
-    if (!confirm("Delete group " + g.name + "? Hosts in it become ungrouped.")) return;
-    try {
-      await api("/api/v1/admin/groups/" + encodeURIComponent(g.id), { method: "DELETE" });
-      await refreshHosts();
-      paintDrawer();
-    } catch (e) { toast(e.message); }
-  }
-
-  async function assignGroup(h, groupId) {
-    try {
-      await api("/api/v1/admin/hosts/" + encodeURIComponent(h.id) + "/group", { method: "PATCH", body: JSON.stringify({ group_id: groupId }) });
-      await refreshHosts();
-      paintDrawer();
-    } catch (e) {
-      toast(e.message);
-      paintDrawer();
-    }
-  }
-
-  async function setStatus(h, action) {
-    try {
-      await api("/api/v1/admin/hosts/" + h.id + "/" + action, { method: "POST", body: "{}" });
-      await refreshHosts();
-      paintDrawer();
-    } catch (e) { toast(e.message); }
-  }
-
-  async function removeHost(h) {
-    if (!confirm("Delete " + h.hostname + " and its stored logs?")) return;
-    try {
-      await api("/api/v1/admin/hosts/" + h.id, { method: "DELETE" });
-      if (hostId === h.id) { hostId = ""; lines = []; ready = false; }
-      await refreshHosts();
-      paintDrawer();
-    } catch (e) { toast(e.message); }
-  }
 }
 
 function statusBadge(h) {
@@ -650,6 +438,220 @@ function ago(iso) {
   if (s < 3600) return Math.round(s / 60) + "m ago";
   if (s < 86400) return Math.round(s / 3600) + "h ago";
   return Math.round(s / 86400) + "d ago";
+}
+
+function initAdmin() {
+  const sections = ["hosts", "groups", "accounts"];
+  const hostList = document.getElementById("admin-hosts");
+  const groupList = document.getElementById("admin-groups");
+  const hostQuery = document.getElementById("host-admin-q");
+  let hosts = [];
+  let groups = [];
+
+  for (const id of sections) {
+    document.getElementById("nav-" + id).addEventListener("click", () => {
+      if (location.hash === "#" + id) showSection(id);
+      else location.hash = id;
+    });
+  }
+  window.addEventListener("hashchange", () => showSection(sectionFromHash()));
+  showSection(sectionFromHash());
+
+  document.getElementById("create-group").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = document.getElementById("group-name");
+    try {
+      await api("/api/v1/admin/groups", { method: "POST", body: JSON.stringify({ name: input.value.trim() }) });
+      input.value = "";
+      await loadFleet(true);
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+  hostQuery.addEventListener("input", () => paintHosts());
+  loadFleet(true);
+  setInterval(() => { if (!document.hidden) loadFleet(false); }, 5000);
+
+  function sectionFromHash() {
+    const name = location.hash.replace(/^#/, "");
+    return sections.includes(name) ? name : "hosts";
+  }
+
+  function showSection(name) {
+    for (const id of sections) {
+      document.getElementById("panel-" + id).hidden = id !== name;
+      const btn = document.getElementById("nav-" + id);
+      btn.classList.toggle("is-active", id === name);
+      if (id === name) btn.setAttribute("aria-current", "page");
+      else btn.removeAttribute("aria-current");
+    }
+  }
+
+  async function loadFleet(force) {
+    try {
+      const data = await api("/api/v1/hosts");
+      hosts = data.hosts || [];
+      groups = (data.groups || []).slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id));
+      if (force || !hostList.contains(document.activeElement)) paintHosts();
+      if (force || !groupList.contains(document.activeElement)) paintGroups();
+    } catch (err) {
+      if (err.message !== "unauthorized") toast(err.message);
+    }
+  }
+
+  function matches(h, query) {
+    if (!query) return true;
+    if (String(h.hostname || "").toLowerCase().includes(query)) return true;
+    const g = groups.find((item) => item.id === (h.group_id || ""));
+    if (g && g.name.toLowerCase().includes(query)) return true;
+    if (!g && "ungrouped".includes(query)) return true;
+    return false;
+  }
+
+  function paintHosts() {
+    const query = hostQuery.value.trim().toLowerCase();
+    const visible = hosts.filter((h) => matches(h, query));
+    hostList.replaceChildren();
+    if (!visible.length) {
+      const msg = hosts.length ? "No matching hosts." : "No hosts yet. Start an agent with the shared certificate and it will register itself.";
+      hostList.append(el("div", { class: "list-group-item text-secondary" }, [msg]));
+      return;
+    }
+    for (const h of visible) hostList.append(hostRow(h));
+  }
+
+  function hostRow(h) {
+    const row = el("div", { class: "list-group-item admin-host" });
+    const deleteBtn = el("button", { type: "button", class: "btn btn-sm btn-outline-danger" }, ["Delete"]);
+    const statusBtn = h.status === "enabled"
+      ? el("button", { type: "button", class: "btn btn-sm btn-outline-warning" }, ["Disable"])
+      : el("button", { type: "button", class: "btn btn-sm btn-outline-success" }, ["Enable"]);
+    deleteBtn.addEventListener("click", () => removeHost(h));
+    statusBtn.addEventListener("click", () => setStatus(h, h.status === "enabled" ? "disable" : "enable"));
+    const sel = el("select", { class: "form-select form-select-sm admin-group-select", "aria-label": "Group for " + h.hostname });
+    const none = el("option", { value: "" }, ["Ungrouped"]);
+    if (!h.group_id) none.selected = true;
+    sel.append(none);
+    for (const g of groups) {
+      const opt = el("option", { value: g.id }, [g.name]);
+      if (g.id === h.group_id) opt.selected = true;
+      sel.append(opt);
+    }
+    sel.addEventListener("change", () => assignGroup(h, sel.value));
+    const meta = "seen " + ago(h.last_seen_at) + (h.dropped ? " · dropped " + h.dropped : "") + " · " + h.container_count + " containers";
+    row.append(
+      el("div", { class: "d-flex flex-wrap align-items-center gap-2" }, [
+        el("span", { class: "fw-semibold text-truncate me-auto" }, [h.hostname]),
+        statusBadge(h),
+        el("div", { class: "btn-group" }, [statusBtn, deleteBtn]),
+      ]),
+      el("div", { class: "text-secondary small mt-1 mb-2" }, [meta]),
+      sel,
+    );
+    return row;
+  }
+
+  function paintGroups() {
+    groupList.replaceChildren();
+    if (!groups.length) {
+      groupList.append(el("div", { class: "list-group-item text-secondary" }, ["No groups yet."]));
+      return;
+    }
+    for (const g of groups) groupList.append(groupRow(g));
+  }
+
+  function groupRow(g) {
+    const row = el("div", { class: "list-group-item d-flex align-items-center gap-2" });
+    const renameBtn = el("button", { type: "button", class: "btn btn-sm btn-outline-secondary" }, ["Rename"]);
+    const deleteBtn = el("button", { type: "button", class: "btn btn-sm btn-outline-danger" }, ["Delete"]);
+    renameBtn.addEventListener("click", () => beginRenameGroup(g, row));
+    deleteBtn.addEventListener("click", () => deleteGroup(g));
+    row.append(
+      el("div", { class: "min-w-0 flex-grow-1" }, [
+        el("div", { class: "fw-semibold text-truncate" }, [g.name]),
+        el("div", { class: "text-secondary small" }, [g.host_count === 1 ? "1 host" : g.host_count + " hosts"]),
+      ]),
+      el("div", { class: "btn-group flex-shrink-0" }, [renameBtn, deleteBtn]),
+    );
+    return row;
+  }
+
+  function beginRenameGroup(g, row) {
+    const input = el("input", {
+      class: "form-control form-control-sm",
+      type: "text",
+      maxlength: "64",
+      autocomplete: "off",
+      spellcheck: "false",
+      "aria-label": "Group name",
+    });
+    input.value = g.name;
+    const save = el("button", { type: "button", class: "btn btn-sm btn-warning" }, ["Save"]);
+    const cancel = el("button", { type: "button", class: "btn btn-sm btn-outline-secondary" }, ["Cancel"]);
+    save.addEventListener("click", () => renameGroup(g, input.value));
+    cancel.addEventListener("click", () => paintGroups());
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        renameGroup(g, input.value);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        paintGroups();
+      }
+    });
+    row.replaceChildren(el("div", { class: "d-flex gap-2 w-100" }, [input, save, cancel]));
+    input.classList.add("flex-grow-1");
+    input.focus();
+    input.select();
+  }
+
+  async function saveChange(path, body) {
+    await api(path, body);
+    await loadFleet(true);
+  }
+
+  async function assignGroup(h, groupId) {
+    try {
+      await saveChange("/api/v1/admin/hosts/" + encodeURIComponent(h.id) + "/group", { method: "PATCH", body: JSON.stringify({ group_id: groupId }) });
+    } catch (err) {
+      toast(err.message);
+      paintHosts();
+    }
+  }
+
+  async function setStatus(h, action) {
+    try {
+      await saveChange("/api/v1/admin/hosts/" + encodeURIComponent(h.id) + "/" + action, { method: "POST", body: "{}" });
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+
+  async function removeHost(h) {
+    if (!confirm("Delete " + h.hostname + " and its stored logs?")) return;
+    try {
+      await saveChange("/api/v1/admin/hosts/" + encodeURIComponent(h.id), { method: "DELETE" });
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+
+  async function renameGroup(g, name) {
+    try {
+      await saveChange("/api/v1/admin/groups/" + encodeURIComponent(g.id), { method: "PATCH", body: JSON.stringify({ name: name.trim() }) });
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+
+  async function deleteGroup(g) {
+    if (!confirm("Delete group " + g.name + "? Hosts in it become ungrouped.")) return;
+    try {
+      await saveChange("/api/v1/admin/groups/" + encodeURIComponent(g.id), { method: "DELETE" });
+    } catch (err) {
+      toast(err.message);
+    }
+  }
 }
 
 function initAccounts() {

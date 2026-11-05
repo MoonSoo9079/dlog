@@ -91,8 +91,8 @@ The console is served by `dlog-server`.
 - Hosts on the left, container filters across the top, log lines in the main pane.
 - Search the host list by hostname or group name. Click a group header to collapse it. A search shows matches even inside a collapsed group. The line search matches text literally. `%` and `_` are not wildcards.
 - Follow tails new lines. Older loads the previous page.
-- Hosts opens a panel to create, rename, and delete groups, move a host into one group, and disable, enable, or delete hosts. Hosts appear on their own after an agent registers. Only admins see that panel.
-- Admin opens a page to create accounts and set each one to User or Admin. Users can read logs. Admins can also manage hosts, groups, and accounts. An admin cannot delete the signed-in account or remove the last admin.
+- The host list on the left is for reading logs. Hosts appear there after an agent registers.
+- Admin opens a page for hosts, groups, and accounts. There you move a host into one group, disable, enable, or delete a host, and create, rename, or delete groups. You also create accounts and set each one to User or Admin. Users can read logs. Admins can manage hosts, groups, and accounts. An admin cannot delete the signed-in account or remove the last admin.
 
 Deleting a host deletes its stored logs. The agent will register that hostname again if it still has the certificate and the host was not left disabled. Disable a host to refuse it.
 
