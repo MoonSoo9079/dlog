@@ -88,7 +88,7 @@ Lines are buffered in memory (default 10,000). If the server is down, the agent 
 The console is served by `dlog-server`.
 
 - Hosts on the left, container filters across the top, log lines in the main pane.
-- Search the host list by hostname or group name. The line search matches text literally. `%` and `_` are not wildcards.
+- Search the host list by hostname or group name. Click a group header to collapse it. A search shows matches even inside a collapsed group. The line search matches text literally. `%` and `_` are not wildcards.
 - Follow tails new lines. Older loads the previous page.
 - Hosts opens a panel to create, rename, and delete groups, move a host into one group, and disable, enable, or delete hosts. Hosts appear on their own after an agent registers.
 

@@ -68,13 +68,43 @@ body {
 }
 
 .host-group {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  margin: 0;
+  border: 0;
+  background: transparent;
   gap: 0.5rem;
   padding: 0.55rem 0.9rem 0.15rem;
+  font: inherit;
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.06em;
+  line-height: 1.25;
+  text-align: left;
   text-transform: uppercase;
   color: var(--bs-secondary-color);
+  cursor: pointer;
+}
+
+.host-group:hover,
+.host-group:focus-visible {
+  color: var(--bs-emphasis-color);
+}
+
+.host-group.is-collapsed { padding-bottom: 0.45rem; }
+
+.host-group .chevron {
+  flex: 0 0 auto;
+  width: 0.35rem;
+  height: 0.35rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-0.12rem) rotate(45deg);
+}
+
+.host-group.is-collapsed .chevron {
+  transform: translateY(0.05rem) rotate(-45deg);
 }
 
 .host-group .label { min-width: 0; }

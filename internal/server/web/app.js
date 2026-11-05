@@ -1,3 +1,14 @@
+const collapseKey = "dlog.collapsed-groups";
+
+function loadCollapsed() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(collapseKey) || "[]");
+    return new Set(Array.isArray(raw) ? raw.filter((id) => typeof id === "string") : []);
+  } catch (e) {
+    return new Set();
+  }
+}
+
 const loginError = document.getElementById("login-error");
 if (loginError && new URLSearchParams(location.search).get("error")) {
   loginError.hidden = false;
@@ -24,6 +35,7 @@ function initApp() {
   let hosts = [];
   let groups = [];
   let drawerQuery = "";
+  let collapsed = loadCollapsed();
   let containers = [];
   let lines = [];
   let hostId = "";
@@ -124,14 +136,18 @@ function initApp() {
       const nameHit = !query || g.name.toLowerCase().includes(query);
       if (query && !nameHit && !members.length) continue;
       showedGroup = true;
-      hostsEl.append(groupLabel(g.name, members.length, false));
-      for (const h of members) hostsEl.append(hostButton(h));
+      const open = groupOpen(g.id, query);
+      hostsEl.append(groupLabel(g.name, members.length, false, g.id, open));
+      if (open) for (const h of members) hostsEl.append(hostButton(h));
     }
     if (ungrouped.length && groups.length) {
       showedGroup = true;
-      hostsEl.append(groupLabel("Ungrouped", ungrouped.length, true));
+      const open = groupOpen("ungrouped", query);
+      hostsEl.append(groupLabel("Ungrouped", ungrouped.length, true, "ungrouped", open));
+      if (open) for (const h of ungrouped) hostsEl.append(hostButton(h));
+    } else {
+      for (const h of ungrouped) hostsEl.append(hostButton(h));
     }
-    for (const h of ungrouped) hostsEl.append(hostButton(h));
     if (!hosts.length) {
       hostsEl.append(el("p", { class: "text-secondary small px-3 py-2 mb-0" }, ["No hosts yet. Start an agent with the shared certificate and it will register itself."]));
     } else if (!visible.length && !showedGroup) {
@@ -148,9 +164,29 @@ function initApp() {
     return false;
   }
 
-  function groupLabel(name, count, loose) {
-    return el("div", { class: "host-group d-flex justify-content-between align-items-baseline" + (loose ? " is-loose" : "") }, [
-      el("span", { class: "label text-truncate" }, [name]),
+  function groupOpen(key, query) {
+    return !!query || !collapsed.has(key);
+  }
+
+  function toggleGroup(key) {
+    if (hostQEl.value.trim()) return;
+    if (collapsed.has(key)) collapsed.delete(key);
+    else collapsed.add(key);
+    try { localStorage.setItem(collapseKey, JSON.stringify([...collapsed])); } catch (e) { /* keep the choice for this page */ }
+    paintHosts();
+  }
+
+  function groupLabel(name, count, loose, key, open) {
+    return el("button", {
+      type: "button",
+      class: "host-group d-flex justify-content-between align-items-baseline" + (loose ? " is-loose" : "") + (open ? "" : " is-collapsed"),
+      "aria-expanded": open ? "true" : "false",
+      onclick: () => toggleGroup(key),
+    }, [
+      el("span", { class: "d-flex align-items-center gap-2 min-w-0" }, [
+        el("span", { class: "chevron", "aria-hidden": "true" }),
+        el("span", { class: "label text-truncate" }, [name]),
+      ]),
       el("span", { class: "count" }, [String(count)]),
     ]);
   }
