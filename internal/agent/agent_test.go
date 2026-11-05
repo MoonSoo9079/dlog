@@ -15,6 +15,22 @@ import (
 	"dlog/internal/server"
 )
 
+func TestDiscoveryLogSkipsUnchangedSet(t *testing.T) {
+	a := &Agent{}
+	if !a.noteDiscovery([]string{"b", "a"}, []string{"skip"}) {
+		t.Fatal("first list should be logged")
+	}
+	if a.noteDiscovery([]string{"a", "b"}, []string{"skip"}) {
+		t.Fatal("same set in another order should stay quiet")
+	}
+	if !a.noteDiscovery([]string{"a"}, []string{"skip", "other"}) {
+		t.Fatal("a new skip should be logged")
+	}
+	if a.noteDiscovery([]string{"a"}, []string{"other", "skip"}) {
+		t.Fatal("same skip set should stay quiet")
+	}
+}
+
 func TestSameContainerAndSkip(t *testing.T) {
 	id := strings.Repeat("ab", 32)
 	if !sameContainer(id, id[:12]) {

@@ -83,13 +83,15 @@ type Agent struct {
 	buf    *buffer
 	selfID string
 
-	mu        sync.Mutex
-	wg        sync.WaitGroup
-	slots     map[string]slot
-	live      map[string]*liveContainer
-	gen       int
-	lastErr   time.Time
-	errStreak int
+	mu            sync.Mutex
+	wg            sync.WaitGroup
+	slots         map[string]slot
+	live          map[string]*liveContainer
+	gen           int
+	lastErr       time.Time
+	errStreak     int
+	discoverySeen bool
+	discoveryKey  string
 }
 
 type slot struct {

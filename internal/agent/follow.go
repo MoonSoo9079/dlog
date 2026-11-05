@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -49,7 +50,27 @@ func (a *Agent) syncOnce(ctx context.Context) {
 		follow = append(follow, label)
 		a.ensureFollow(ctx, c)
 	}
-	slog.Info("discovered containers", "count", len(list), "follow", strings.Join(follow, ", "), "skip", strings.Join(skip, ", "))
+	sort.Strings(follow)
+	sort.Strings(skip)
+	if a.noteDiscovery(follow, skip) {
+		slog.Info("discovered containers", "count", len(list), "follow", strings.Join(follow, ", "), "skip", strings.Join(skip, ", "))
+	}
+}
+
+// noteDiscovery reports whether this follow/skip set differs from the last one logged.
+// The 30-second relist keeps running, but an unchanged set stays quiet.
+func (a *Agent) noteDiscovery(follow, skip []string) bool {
+	names := append([]string(nil), follow...)
+	skipped := append([]string(nil), skip...)
+	sort.Strings(names)
+	sort.Strings(skipped)
+	key := strings.Join(names, "\n") + "\n" + strings.Join(skipped, "\n")
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	changed := !a.discoverySeen || a.discoveryKey != key
+	a.discoverySeen = true
+	a.discoveryKey = key
+	return changed
 }
 
 func (a *Agent) eventLoop(ctx context.Context) {

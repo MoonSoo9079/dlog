@@ -72,7 +72,7 @@ For a private CA, mount the PEM file and set `DLOG_CA_FILE` to that path. Podman
 
 ## What the agent collects
 
-On startup, and every 30 seconds, the agent lists running containers and logs the names it will follow and the names it will skip. It also watches Docker events so a new container is followed without waiting for the next list. For each container it calls the Docker log API with `follow`, `stdout`, `stderr`, and `timestamps`, starting from the saved cursor or from `DLOG_SINCE` (default 10 minutes) the first time. The API version is the one the daemon advertises. Docker 29 rejects older clients, including a hardcoded `/v1.41`.
+On startup the agent lists running containers and logs the names it will follow and the names it will skip. It lists again every 30 seconds so a container missed by Docker events is still followed, and it logs that list only when the set changes. It also watches Docker events so a new container is followed without waiting for the next list. For each container it calls the Docker log API with `follow`, `stdout`, `stderr`, and `timestamps`, starting from the saved cursor or from `DLOG_SINCE` (default 10 minutes) the first time. The API version is the one the daemon advertises. Docker 29 rejects older clients, including a hardcoded `/v1.41`.
 
 It skips:
 
