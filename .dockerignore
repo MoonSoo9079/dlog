@@ -1,0 +1,9 @@
+bin
+data
+.git
+*.db
+*.db-wal
+*.db-shm
+admin.token
+state.json
+agent.key

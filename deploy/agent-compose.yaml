@@ -1,0 +1,34 @@
+# Agent only, for a Docker host that should ship logs to an existing server.
+# From the repo root:
+# Copy agent.crt and agent.key from the server (the same files on every host).
+#   DLOG_SERVER_URL=https://logs.example.com \
+#   DLOG_HOSTNAME=web-01 \
+#   DLOG_AGENT_CERT_FILE=./agent.crt \
+#   DLOG_AGENT_KEY_FILE=./agent.key \
+#   docker compose -f deploy/agent-compose.yaml up -d --build
+services:
+  agent:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: agent
+    image: dlog-agent:local
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dlog-agent:/var/lib/dlog-agent
+      - ${DLOG_AGENT_CERT_FILE:?copy agent.crt from the server}:/etc/dlog/agent.crt:ro
+      - ${DLOG_AGENT_KEY_FILE:?copy agent.key from the server}:/etc/dlog/agent.key:ro
+    environment:
+      DLOG_SERVER_URL: ${DLOG_SERVER_URL:?set DLOG_SERVER_URL}
+      DLOG_HOSTNAME: ${DLOG_HOSTNAME:?set DLOG_HOSTNAME}
+      DLOG_AGENT_CERT: /etc/dlog/agent.crt
+      DLOG_AGENT_KEY: /etc/dlog/agent.key
+      DLOG_SINCE: ${DLOG_SINCE:-10m}
+      DLOG_STATE_DIR: /var/lib/dlog-agent
+      DLOG_CA_FILE: ${DLOG_CA_FILE:-}
+    labels:
+      dlog.exclude: "true"
+
+volumes:
+  dlog-agent:

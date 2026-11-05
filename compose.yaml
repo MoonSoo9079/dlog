@@ -1,0 +1,64 @@
+# Lab stack. The agent reads every container on the host's Docker daemon,
+# not only the services in this file.
+#   docker compose up --build
+# Then open http://127.0.0.1:8080 and sign in with local-dev-admin-token.
+services:
+  server:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      target: server
+    image: dlog-server:local
+    ports:
+      - "8080:8080"
+    environment:
+      DLOG_ADMIN_TOKEN: local-dev-admin-token
+      DLOG_RETENTION: 168h
+      DLOG_DATA_DIR: /var/lib/dlog
+      DLOG_AGENT_CERT: /var/lib/dlog-cred/agent.crt
+      DLOG_AGENT_KEY: /var/lib/dlog-cred/agent.key
+    volumes:
+      - dlog-data:/var/lib/dlog
+      - dlog-cred:/var/lib/dlog-cred
+    healthcheck:
+      test: ["/usr/local/bin/dlog-server", "healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  agent:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      target: agent
+    image: dlog-agent:local
+    hostname: dlog-lab
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      DLOG_SERVER_URL: http://server:8080
+      DLOG_HOSTNAME: dlog-lab
+      DLOG_SINCE: 10m
+      DLOG_STATE_DIR: /var/lib/dlog-agent
+      DLOG_AGENT_CERT: /etc/dlog/agent.crt
+      DLOG_AGENT_KEY: /etc/dlog/agent.key
+    labels:
+      dlog.exclude: "true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dlog-agent:/var/lib/dlog-agent
+      - dlog-cred:/etc/dlog:ro
+    restart: unless-stopped
+
+  logger:
+    image: docker.io/library/busybox:1.36
+    command: ["sh", "-c", "i=0; while true; do i=$$((i+1)); echo \"hello $$i from dlog\"; echo \"stderr $$i\" >&2; sleep 3; done"]
+    restart: unless-stopped
+
+volumes:
+  dlog-data:
+  dlog-cred:
+  dlog-agent:
