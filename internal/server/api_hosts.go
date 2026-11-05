@@ -38,23 +38,52 @@ func (s *Server) handleContainers(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRenameHost(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Hostname string `json:"hostname"`
+		Hostname    *string `json:"hostname"`
+		DisplayName *string `json:"display_name"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	body.Hostname = strings.TrimSpace(body.Hostname)
-	if !protocol.ValidHostname(body.Hostname) {
-		writeError(w, http.StatusBadRequest, "invalid hostname")
+	if body.Hostname == nil && body.DisplayName == nil {
+		writeError(w, http.StatusBadRequest, "nothing to change")
 		return
 	}
+	var hostname string
+	if body.Hostname != nil {
+		hostname = strings.TrimSpace(*body.Hostname)
+		if !protocol.ValidHostname(hostname) {
+			writeError(w, http.StatusBadRequest, "invalid hostname")
+			return
+		}
+	}
+	var displayName string
+	if body.DisplayName != nil {
+		displayName = strings.TrimSpace(*body.DisplayName)
+		if displayName != "" && !validGroupName(displayName) {
+			writeError(w, http.StatusBadRequest, "invalid name")
+			return
+		}
+	}
 	id := r.PathValue("id")
-	if err := s.store.RenameHost(id, body.Hostname); err != nil {
+	if body.Hostname != nil {
+		if err := s.store.RenameHost(id, hostname); err != nil {
+			writeStoreError(w, err)
+			return
+		}
+	}
+	if body.DisplayName != nil {
+		if err := s.store.SetDisplayName(id, displayName); err != nil {
+			writeStoreError(w, err)
+			return
+		}
+	}
+	host, err := s.store.Host(id)
+	if err != nil {
 		writeStoreError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"id": id, "hostname": body.Hostname})
+	writeJSON(w, http.StatusOK, host)
 }
 
 func (s *Server) handleDisableHost(w http.ResponseWriter, r *http.Request) {

@@ -15,6 +15,7 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		CurrentPassword string `json:"current_password"`
 		Password        string `json:"password"`
+		SignOutOthers   bool   `json:"sign_out_others"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, statusForDecode(err), "bad request")
@@ -46,6 +47,16 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.SetPassword(me.ID, body.Password); err != nil {
 		writeStoreError(w, err)
 		return
+	}
+	if body.SignOutOthers {
+		keep := ""
+		if c, err := r.Cookie(sessionCookie); err == nil {
+			keep = c.Value
+		}
+		if err := s.store.DeleteOtherSessions(me.ID, keep); err != nil {
+			writeStoreError(w, err)
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, me)
 }
@@ -121,6 +132,10 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Password != nil {
 		if err := s.store.SetPassword(r.PathValue("id"), *body.Password); err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		if err := s.store.DeleteUserSessions(r.PathValue("id")); err != nil {
 			writeStoreError(w, err)
 			return
 		}

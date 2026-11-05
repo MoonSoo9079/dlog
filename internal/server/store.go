@@ -78,6 +78,14 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := migrateDisplayNames(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := migrateLogKeys(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db}, nil
 }
 
@@ -118,6 +126,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_host_groups_name ON host_groups(name COLLA
 CREATE TABLE IF NOT EXISTS hosts (
   id TEXT PRIMARY KEY,
   hostname TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL DEFAULT '',
   token_hash TEXT NOT NULL UNIQUE,
   status TEXT NOT NULL DEFAULT 'enabled',
   agent_version TEXT NOT NULL DEFAULT '',
@@ -148,7 +157,8 @@ CREATE TABLE IF NOT EXISTS logs (
   image TEXT NOT NULL DEFAULT '',
   stream TEXT NOT NULL,
   ts INTEGER NOT NULL,
-  message TEXT NOT NULL
+  message TEXT NOT NULL,
+  line_key TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_logs_host_id ON logs(host_id, id);
@@ -246,6 +256,112 @@ func migrateSessions(db *sql.DB) error {
 		return fmt.Errorf("idx_sessions_user: %w", err)
 	}
 	return nil
+}
+
+// migrateDisplayNames adds hosts.display_name. The hostname stays the
+// registration key. The display name is only what the console shows.
+func migrateDisplayNames(db *sql.DB) error {
+	has, err := hasColumn(db, "hosts", "display_name")
+	if err != nil {
+		return err
+	}
+	if has {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE hosts ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`); err != nil {
+		return fmt.Errorf("hosts.display_name: %w", err)
+	}
+	return nil
+}
+
+// migrateLogKeys gives every stored line a stable key and keeps one row when
+// a retry inserted the same line twice. The unique index is created here, not
+// in schema, because an existing logs table does not have the column yet.
+func migrateLogKeys(db *sql.DB) error {
+	has, err := hasColumn(db, "logs", "line_key")
+	if err != nil {
+		return err
+	}
+	if !has {
+		if _, err := db.Exec(`ALTER TABLE logs ADD COLUMN line_key TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("logs.line_key: %w", err)
+		}
+	}
+	for {
+		rows, err := db.Query(`SELECT id, container_id, stream, ts, message FROM logs WHERE line_key='' LIMIT 200`)
+		if err != nil {
+			return err
+		}
+		type oldLine struct {
+			id                  int64
+			containerID, stream string
+			ts                  int64
+			message             string
+		}
+		var batch []oldLine
+		for rows.Next() {
+			var line oldLine
+			if err := rows.Scan(&line.id, &line.containerID, &line.stream, &line.ts, &line.message); err != nil {
+				rows.Close()
+				return err
+			}
+			batch = append(batch, line)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+		if len(batch) == 0 {
+			break
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		for _, line := range batch {
+			key := lineKey(protocol.Record{
+				ContainerID: line.containerID,
+				Stream:      line.stream,
+				Timestamp:   time.UnixMilli(line.ts).UTC(),
+				Message:     line.message,
+			})
+			if _, err := tx.Exec(`UPDATE logs SET line_key=? WHERE id=?`, key, line.id); err != nil {
+				tx.Rollback()
+				return err
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+	if _, err := db.Exec(`DELETE FROM logs WHERE id NOT IN (SELECT MIN(id) FROM logs GROUP BY host_id, line_key)`); err != nil {
+		return fmt.Errorf("logs dedup: %w", err)
+	}
+	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_logs_line ON logs(host_id, line_key)`); err != nil {
+		return fmt.Errorf("idx_logs_line: %w", err)
+	}
+	return nil
+}
+
+func hasColumn(db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 func isUnique(err error) bool {

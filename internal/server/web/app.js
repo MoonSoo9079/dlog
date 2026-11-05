@@ -64,6 +64,22 @@ function initApp() {
   });
   document.getElementById("older").addEventListener("click", loadOlder);
   streamSel.addEventListener("change", () => { stream = streamSel.value; reload(); });
+  const rangeSel = document.getElementById("range");
+  const sinceInput = document.getElementById("since");
+  let range = "";
+  let sinceLocal = "";
+  rangeSel.addEventListener("change", () => {
+    range = rangeSel.value;
+    sinceInput.hidden = range !== "from";
+    reload();
+  });
+  sinceInput.addEventListener("change", () => {
+    sinceLocal = sinceInput.value;
+    if (range === "from") reload();
+  });
+  document.addEventListener("selectionchange", () => {
+    logEl.style.overflowAnchor = selectingLog() ? "none" : "";
+  });
   let qTimer = 0;
   qInput.addEventListener("input", () => {
     clearTimeout(qTimer);
@@ -168,6 +184,7 @@ function initApp() {
   function matchesHost(h, query) {
     if (!query) return true;
     if (String(h.hostname || "").toLowerCase().includes(query)) return true;
+    if (String(h.display_name || "").toLowerCase().includes(query)) return true;
     const g = groups.find((item) => item.id === (h.group_id || ""));
     if (g && g.name.toLowerCase().includes(query)) return true;
     if (!g && "ungrouped".includes(query)) return true;
@@ -202,7 +219,6 @@ function initApp() {
   }
 
   function hostButton(h) {
-    const status = h.status !== "enabled" ? "disabled" : (h.online ? "online" : "offline");
     const dotClass = h.status !== "enabled" ? "dot off" : (h.online ? "dot on" : "dot");
     return el("button", {
       type: "button",
@@ -211,8 +227,8 @@ function initApp() {
     }, [
       el("span", { class: dotClass }),
       el("span", { class: "min-w-0" }, [
-        el("span", { class: "d-block fw-semibold name text-truncate" }, [h.hostname]),
-        el("span", { class: "d-block small sub opacity-75" }, [status + " · " + ago(h.last_seen_at) + " · " + h.container_count + " containers"]),
+        el("span", { class: "d-block fw-semibold name text-truncate" }, [hostLabel(h)]),
+        el("span", { class: "d-block small sub opacity-75" }, [hostDetail(h)]),
       ]),
     ]);
   }
@@ -263,7 +279,7 @@ function initApp() {
       const data = await api(logURL());
       if (my !== gen) return;
       lines = data.lines || [];
-      paintLines({ stick: follow && nearBottom() });
+      paintLines({ stick: follow && nearBottom() && !selectingLog() });
       ready = true;
     } catch (e) {
       if (my === gen && e.message !== "unauthorized") toast(e.message);
@@ -280,7 +296,8 @@ function initApp() {
       const data = await api(logURL({ after_id: String(after) }));
       if (my !== gen || !data) return;
       if (!data.lines || !data.lines.length) return;
-      const stick = nearBottom();
+      // A selection inside the pane keeps its place while new lines arrive.
+      const stick = nearBottom() && !selectingLog();
       for (const ln of data.lines) {
         lines.push(ln);
         logEl.append(lineNode(ln));
@@ -376,7 +393,25 @@ function initApp() {
       const top = logEl.scrollHeight - opts.anchorHeight;
       if (logEl.scrollTop !== top) logEl.scrollTop = top;
     }
-    if (manageScroll) logEl.style.overflowAnchor = "";
+    if (manageScroll) logEl.style.overflowAnchor = selectingLog() ? "none" : "";
+  }
+
+  function selectingLog() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return false;
+    const node = sel.anchorNode;
+    return !!(node && logEl.contains(node));
+  }
+
+  function sinceBound() {
+    const now = Date.now();
+    if (range === "15m") return new Date(now - 15 * 60 * 1000).toISOString();
+    if (range === "1h") return new Date(now - 60 * 60 * 1000).toISOString();
+    if (range === "from" && sinceLocal) {
+      const start = new Date(sinceLocal);
+      if (!Number.isNaN(start.getTime())) return start.toISOString();
+    }
+    return "";
   }
 
   function logURL(extra) {
@@ -385,11 +420,26 @@ function initApp() {
     if (containerId) p.set("container_id", containerId);
     if (q) p.set("q", q);
     if (stream) p.set("stream", stream);
+    const since = sinceBound();
+    if (since) p.set("since", since);
     p.set("limit", "300");
     if (extra) for (const [k, v] of Object.entries(extra)) p.set(k, v);
     return "/api/v1/logs?" + p.toString();
   }
 
+}
+
+function hostLabel(h) {
+  const name = String(h.display_name || "").trim();
+  return name || h.hostname;
+}
+
+function hostDetail(h) {
+  const status = h.status !== "enabled" ? "disabled" : (h.online ? "online" : "offline");
+  const parts = [status, ago(h.last_seen_at), h.container_count + " containers"];
+  if (String(h.display_name || "").trim()) parts.push(h.hostname);
+  if (h.dropped) parts.push("dropped " + h.dropped);
+  return parts.join(" · ");
 }
 
 function statusBadge(h) {
@@ -505,6 +555,7 @@ function initAdmin() {
   function matches(h, query) {
     if (!query) return true;
     if (String(h.hostname || "").toLowerCase().includes(query)) return true;
+    if (String(h.display_name || "").toLowerCase().includes(query)) return true;
     const g = groups.find((item) => item.id === (h.group_id || ""));
     if (g && g.name.toLowerCase().includes(query)) return true;
     if (!g && "ungrouped".includes(query)) return true;
@@ -541,14 +592,33 @@ function initAdmin() {
       sel.append(opt);
     }
     sel.addEventListener("change", () => assignGroup(h, sel.value));
-    const meta = "seen " + ago(h.last_seen_at) + (h.dropped ? " · dropped " + h.dropped : "") + " · " + h.container_count + " containers";
+    const nameInput = el("input", {
+      class: "form-control form-control-sm admin-display-name",
+      type: "text",
+      maxlength: "64",
+      autocomplete: "off",
+      spellcheck: "false",
+      placeholder: "Display name",
+      "aria-label": "Display name for " + h.hostname,
+    });
+    nameInput.value = h.display_name || "";
+    const saveName = el("button", { type: "button", class: "btn btn-sm btn-outline-secondary" }, ["Save name"]);
+    saveName.addEventListener("click", () => saveDisplayName(h, nameInput.value));
+    nameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        saveDisplayName(h, nameInput.value);
+      }
+    });
+    const meta = h.hostname + " · seen " + ago(h.last_seen_at) + (h.dropped ? " · dropped " + h.dropped : "") + " · " + h.container_count + " containers";
     row.append(
       el("div", { class: "d-flex flex-wrap align-items-center gap-2" }, [
-        el("span", { class: "fw-semibold text-truncate me-auto" }, [h.hostname]),
+        el("span", { class: "fw-semibold text-truncate me-auto" }, [hostLabel(h)]),
         statusBadge(h),
         el("div", { class: "btn-group" }, [statusBtn, deleteBtn]),
       ]),
-      el("div", { class: "text-secondary small mt-1 mb-2" }, [meta]),
+      el("div", { class: "text-secondary small mt-1" }, [meta]),
+      el("div", { class: "d-flex flex-wrap gap-2 my-2" }, [nameInput, saveName]),
       sel,
     );
     return row;
@@ -613,6 +683,15 @@ function initAdmin() {
     await loadFleet(true);
   }
 
+  async function saveDisplayName(h, name) {
+    try {
+      await saveChange("/api/v1/admin/hosts/" + encodeURIComponent(h.id), { method: "PATCH", body: JSON.stringify({ display_name: name.trim() }) });
+    } catch (err) {
+      toast(err.message);
+      paintHosts();
+    }
+  }
+
   async function assignGroup(h, groupId) {
     try {
       await saveChange("/api/v1/admin/hosts/" + encodeURIComponent(h.id) + "/group", { method: "PATCH", body: JSON.stringify({ group_id: groupId }) });
@@ -631,7 +710,7 @@ function initAdmin() {
   }
 
   async function removeHost(h) {
-    if (!confirm("Delete " + h.hostname + " and its stored logs?")) return;
+    if (!confirm("Delete " + hostLabel(h) + " and its stored logs?")) return;
     try {
       await saveChange("/api/v1/admin/hosts/" + encodeURIComponent(h.id), { method: "DELETE" });
     } catch (err) {
@@ -677,8 +756,9 @@ function initAccount() {
       toast("Passwords do not match");
       return;
     }
+    const others = document.getElementById("sign-out-others").checked;
     try {
-      await api("/api/v1/me", { method: "PATCH", body: JSON.stringify({ current_password: current, password: next }) });
+      await api("/api/v1/me", { method: "PATCH", body: JSON.stringify({ current_password: current, password: next, sign_out_others: others }) });
       e.target.reset();
       toast("Password updated");
     } catch (err) {
@@ -784,8 +864,12 @@ function initAccounts() {
     }
     try {
       await api("/api/v1/admin/users/" + encodeURIComponent(u.id), { method: "PATCH", body: JSON.stringify({ password: input.value }) });
+      if (me && u.id === me.id) {
+        location.href = "/login";
+        return;
+      }
       input.value = "";
-      toast("Password updated");
+      toast("Password updated. That account is signed out.");
     } catch (err) {
       toast(err.message);
     }

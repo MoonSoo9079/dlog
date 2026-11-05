@@ -68,6 +68,8 @@ DLOG_AGENT_KEY_FILE=./agent.key \
 docker compose -f deploy/agent-compose.yaml up -d --build
 ```
 
+`DLOG_AGENT_CERT_FILE` and `DLOG_AGENT_KEY_FILE` are the certificate files on the host. Compose mounts them into the container. The agent process reads `DLOG_AGENT_CERT` and `DLOG_AGENT_KEY`, which that compose file sets to the mounted paths.
+
 For a private CA, mount the PEM file and set `DLOG_CA_FILE` to that path. Podman works too: point `DLOG_DOCKER_HOST` at the Podman API socket (`unix:///run/podman/podman.sock`, or `$XDG_RUNTIME_DIR/podman/podman.sock` for rootless).
 
 ## What the agent collects
@@ -82,18 +84,19 @@ It skips:
 
 The Docker socket is root-equivalent. The agent container is root for that reason. On the host, the socket is usually mode `0660` and group `docker`; add your user to that group instead of running the agent with sudo. Treat `agent.key` and the state volume as secrets. The key file and the state file are mode `0600`.
 
-Lines are buffered in memory (default 10,000). If the server is down, the agent retries with backoff and does not drop the buffer until it is full. Delivery is at-least-once: a crash after the server accepts a batch and before the cursor is saved can send those lines again.
+Lines are buffered in memory (default 10,000). If the server is down, the agent retries with backoff and does not drop the buffer until it is full. Delivery is at-least-once: a crash after the server accepts a batch and before the cursor is saved can send those lines again. The server stores one row for a host, container, stream, millisecond, and message, so that retry does not create a second row. Two identical lines in the same millisecond are stored once.
 
 ## Operator console
 
 The console is served by `dlog-server`.
 
 - Hosts on the left, container filters across the top, log lines in the main pane.
-- Search the host list by hostname or group name. Click a group header to collapse it. A search shows matches even inside a collapsed group. The line search matches text literally. `%` and `_` are not wildcards.
-- Follow tails new lines. Older loads the previous page.
-- Account opens a page where the signed-in user changes their own password. The current password is required.
-- The host list on the left is for reading logs. Hosts appear there after an agent registers.
-- Admin opens a page for hosts, groups, and accounts. There you move a host into one group, disable, enable, or delete a host, and create, rename, or delete groups. You also create accounts and set each one to User or Admin. Users can read logs. Admins can manage hosts, groups, and accounts. An admin cannot delete the signed-in account or remove the last admin.
+- Search the host list by hostname, display name, or group name. Click a group header to collapse it. A search shows matches even inside a collapsed group. The line search matches text literally. `%` and `_` are not wildcards.
+- Follow tails new lines. Older loads the previous page. The time control limits the pane to the last 15 minutes, the last hour, or lines from a start time you pick. Selecting text in the log pane keeps the scroll where it is.
+- A host row shows how many lines the agent has dropped when that count is not zero.
+- Account opens a page where the signed-in user changes their own password. The current password is required. This browser stays signed in. Sign out other sessions ends every other session for that account.
+- The host list on the left is for reading logs. Hosts appear there after an agent registers. A display name, when set, is the name on that row. The hostname stays underneath it.
+- Admin opens a page for hosts, groups, and accounts. There you set a display name, move a host into one group, disable, enable, or delete a host, and create, rename, or delete groups. You also create accounts and set each one to User or Admin. Setting an account's password signs that account out. Users can read logs. Admins can manage hosts, groups, and accounts. An admin cannot delete the signed-in account or remove the last admin.
 
 Deleting a host deletes its stored logs. The agent will register that hostname again if it still has the certificate and the host was not left disabled. Disable a host to refuse it.
 
@@ -109,20 +112,20 @@ Deleting a host deletes its stored logs. The agent will register that hostname a
 | POST | `/api/v1/heartbeat` | host token |
 | POST | `/api/v1/login` | username and password, sets the session cookie |
 | GET | `/api/v1/me` | signed-in account. Body is `{"id","username","role","created_at"}`. |
-| PATCH | `/api/v1/me` | signed-in account, body `{"current_password","password"}`. Changes that account's password. A wrong current password is 400. |
-| GET | `/api/v1/hosts` | signed-in account. Body is `{"hosts","groups"}`. Each host has `group_id` (`""` when ungrouped). |
+| PATCH | `/api/v1/me` | signed-in account, body `{"current_password","password","sign_out_others"}`. Changes that account's password. `sign_out_others` ends every other session. A wrong current password is 400. |
+| GET | `/api/v1/hosts` | signed-in account. Body is `{"hosts","groups"}`. Each host has `group_id` (`""` when ungrouped), `display_name` (`""` when unset), and `dropped`. |
 | GET | `/api/v1/containers?host_id=` | signed-in account |
-| GET | `/api/v1/logs?host_id=&container_id=&stream=&q=&limit=&after_id=&before_id=` | signed-in account |
+| GET | `/api/v1/logs?host_id=&container_id=&stream=&q=&limit=&after_id=&before_id=&since=&until=` | signed-in account. `since` and `until` are RFC3339. |
 | GET | `/api/v1/admin/users` | admin. Body is `{"users":[...]}`. |
 | POST | `/api/v1/admin/users` | admin, body `{"username","password","role"}`, 201. `role` is `user` or `admin`. |
-| PATCH | `/api/v1/admin/users/{id}` | admin, body `{"role"}` and/or `{"password"}` |
+| PATCH | `/api/v1/admin/users/{id}` | admin, body `{"role"}` and/or `{"password"}`. A new password signs that account out. |
 | DELETE | `/api/v1/admin/users/{id}` | admin. Refuses the signed-in account and the last admin. |
 | POST | `/api/v1/admin/groups` | admin, body `{"name"}`, 201 |
 | PATCH | `/api/v1/admin/groups/{id}` | admin, body `{"name"}` |
 | DELETE | `/api/v1/admin/groups/{id}` | admin. Hosts in the group stay, ungrouped. |
 | POST | `/api/v1/admin/hosts/{id}/disable` | admin |
 | POST | `/api/v1/admin/hosts/{id}/enable` | admin |
-| PATCH | `/api/v1/admin/hosts/{id}` | admin, body `{"hostname":"new-name"}` |
+| PATCH | `/api/v1/admin/hosts/{id}` | admin, body `{"display_name":"Web 01"}` and/or `{"hostname":"new-name"}`. `display_name` of `""` clears it. The hostname is the registration name. Changing it makes the next registration of the old name create another host. |
 | PATCH | `/api/v1/admin/hosts/{id}/group` | admin, body `{"group_id":"grp_…"}`. `""` clears the group. |
 | DELETE | `/api/v1/admin/hosts/{id}` | admin |
 

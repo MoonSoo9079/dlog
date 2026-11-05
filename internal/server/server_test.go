@@ -153,7 +153,7 @@ func TestHTTPAuthIngestAndUI(t *testing.T) {
 	}
 	page, _ = io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 200 || !strings.Contains(string(page), "Dlog") || !strings.Contains(string(page), "/app.js") || !strings.Contains(string(page), "/bootstrap.min.css") || !strings.Contains(string(page), `href="/account"`) || strings.Contains(string(page), `id="drawer"`) || strings.Contains(string(page), `id="manage"`) {
+	if res.StatusCode != 200 || !strings.Contains(string(page), "Dlog") || !strings.Contains(string(page), "/app.js") || !strings.Contains(string(page), "/bootstrap.min.css") || !strings.Contains(string(page), `href="/account"`) || !strings.Contains(string(page), `id="range"`) || strings.Contains(string(page), `id="drawer"`) || strings.Contains(string(page), `id="manage"`) {
 		t.Fatalf("console: %d", res.StatusCode)
 	}
 
@@ -483,10 +483,16 @@ func TestAccounts(t *testing.T) {
 	if err := json.Unmarshal(body, &ada); err != nil {
 		t.Fatal(err)
 	}
+	adaSession := login(t, client, ts.URL, "ada", "reader-password")
 	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/users/"+ada.ID, admin, `{"password":"reader-password-2"}`)
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("set password: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/me", adaSession, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("reset session still signed in: %d", res.StatusCode)
 	}
 	if got := login(t, client, ts.URL, "ada", "reader-password-2"); !strings.HasPrefix(got, "ses_") {
 		t.Fatalf("new password session: %s", got)
@@ -522,7 +528,7 @@ func TestChangePassword(t *testing.T) {
 	res = do(t, client, http.MethodGet, ts.URL+"/account", user, "")
 	page, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 200 || !strings.Contains(string(page), "Current password") || !strings.Contains(string(page), "Change password") {
+	if res.StatusCode != 200 || !strings.Contains(string(page), "Current password") || !strings.Contains(string(page), "Change password") || !strings.Contains(string(page), "Sign out other sessions") {
 		t.Fatalf("account page: %d", res.StatusCode)
 	}
 
@@ -565,6 +571,67 @@ func TestChangePassword(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("old password still works: %d", res.StatusCode)
+	}
+
+	other := login(t, client, ts.URL, "admin", "admin-test-password-2")
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/me", user, `{"current_password":"admin-test-password-2","password":"admin-test-password-3","sign_out_others":true}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("sign out others: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/me", user, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("current session: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/me", other, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("other session: %d", res.StatusCode)
+	}
+}
+
+func TestHostDisplayName(t *testing.T) {
+	ts, st, key := testServer(t)
+	client := noRedirect(t)
+	admin := login(t, client, ts.URL, "admin", testAdminPassword)
+	host, _, err := st.CreateHost("web-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/hosts/"+host.ID, admin, `{}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("empty patch: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/hosts/"+host.ID, admin, `{"display_name":"!!"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bad name: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/hosts/"+host.ID, admin, `{"display_name":"Web 01"}`)
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"display_name":"Web 01"`) || !strings.Contains(string(body), `"hostname":"web-01"`) {
+		t.Fatalf("display name: %d %s", res.StatusCode, body)
+	}
+	res = register(t, client, ts.URL, key, "web-01", time.Now().UTC())
+	regBody, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("register: %d %s", res.StatusCode, regBody)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/hosts", admin, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"display_name":"Web 01"`) || !strings.Contains(string(body), `"hostname":"web-01"`) {
+		t.Fatalf("name survived register: %d %s", res.StatusCode, body)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/hosts/"+host.ID, admin, `{"display_name":""}`)
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"display_name":""`) {
+		t.Fatalf("clear name: %d %s", res.StatusCode, body)
 	}
 }
 

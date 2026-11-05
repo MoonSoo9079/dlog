@@ -98,6 +98,9 @@ body {
 
 .account-panel { max-width: 32rem; }
 
+.since-input,
+.admin-display-name { width: 16rem; max-width: 100%; }
+
 .admin-host .form-select,
 .admin-group-select {
   width: auto;

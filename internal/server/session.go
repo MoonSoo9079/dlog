@@ -52,6 +52,24 @@ func (s *Store) DeleteSession(raw string) error {
 	return err
 }
 
+// DeleteOtherSessions ends every session for userID except the one in keepRaw.
+func (s *Store) DeleteOtherSessions(userID, keepRaw string) error {
+	if userID == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`DELETE FROM sessions WHERE user_id=? AND id_hash<>?`, userID, token.Hash(keepRaw))
+	return err
+}
+
+// DeleteUserSessions ends every session for userID.
+func (s *Store) DeleteUserSessions(userID string) error {
+	if userID == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`DELETE FROM sessions WHERE user_id=?`, userID)
+	return err
+}
+
 func (s *Store) PurgeSessions() error {
 	_, err := s.db.Exec(`DELETE FROM sessions WHERE expires_at<=?`, time.Now().UnixMilli())
 	return err

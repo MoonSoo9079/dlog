@@ -13,6 +13,7 @@ import (
 type Host struct {
 	ID             string            `json:"id"`
 	Hostname       string            `json:"hostname"`
+	DisplayName    string            `json:"display_name"`
 	Status         string            `json:"status"`
 	Online         bool              `json:"online"`
 	AgentVersion   string            `json:"agent_version"`
@@ -121,6 +122,20 @@ func (s *Store) RenameHost(id, hostname string) error {
 	return nil
 }
 
+// SetDisplayName sets the name the console shows. An empty name shows the
+// hostname. Registration keeps looking the host up by hostname.
+func (s *Store) SetDisplayName(id, name string) error {
+	var exists int
+	if err := s.db.QueryRow(`SELECT COUNT(1) FROM hosts WHERE id=?`, id).Scan(&exists); err != nil {
+		return err
+	}
+	if exists == 0 {
+		return ErrNotFound
+	}
+	_, err := s.db.Exec(`UPDATE hosts SET display_name=? WHERE id=?`, name, id)
+	return err
+}
+
 func (s *Store) DeleteHost(id string) error {
 	var exists int
 	if err := s.db.QueryRow(`SELECT COUNT(1) FROM hosts WHERE id=?`, id).Scan(&exists); err != nil {
@@ -153,7 +168,7 @@ func (s *Store) Host(id string) (Host, error) {
 }
 
 func (s *Store) ListHosts() ([]Host, error) {
-	rows, err := s.db.Query(hostSelect + ` ORDER BY h.hostname`)
+	rows, err := s.db.Query(hostSelect + ` ORDER BY lower(CASE WHEN h.display_name <> '' THEN h.display_name ELSE h.hostname END), h.hostname`)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +188,7 @@ func (s *Store) ListHosts() ([]Host, error) {
 }
 
 const hostSelect = `
-SELECT h.id, h.hostname, h.status, h.agent_version, h.docker_version, h.metadata, h.dropped,
+SELECT h.id, h.hostname, h.display_name, h.status, h.agent_version, h.docker_version, h.metadata, h.dropped,
        h.created_at, h.last_seen_at, COALESCE(h.group_id, ''),
        (SELECT COUNT(*) FROM containers c WHERE c.host_id = h.id)
 FROM hosts h`
@@ -187,7 +202,7 @@ func scanHost(row rowScanner) (Host, error) {
 	var meta string
 	var created int64
 	var seen sql.NullInt64
-	err := row.Scan(&h.ID, &h.Hostname, &h.Status, &h.AgentVersion, &h.DockerVersion, &meta, &h.Dropped, &created, &seen, &h.GroupID, &h.ContainerCount)
+	err := row.Scan(&h.ID, &h.Hostname, &h.DisplayName, &h.Status, &h.AgentVersion, &h.DockerVersion, &meta, &h.Dropped, &created, &seen, &h.GroupID, &h.ContainerCount)
 	if err != nil {
 		return Host{}, err
 	}

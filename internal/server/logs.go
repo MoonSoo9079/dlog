@@ -1,7 +1,10 @@
 package server
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
@@ -48,6 +51,7 @@ func (s *Store) Ingest(hostID string, records []protocol.Record) (int, error) {
 		return 0, ErrDisabled
 	}
 	now := time.Now().UTC().UnixMilli()
+	accepted := 0
 	for _, r := range records {
 		if _, err := tx.Exec(`
 INSERT INTO containers (host_id, container_id, name, image, labels, state, last_seen_at)
@@ -61,11 +65,17 @@ ON CONFLICT(host_id, container_id) DO UPDATE SET
 			return 0, err
 		}
 		if _, err := tx.Exec(`
-INSERT INTO logs (host_id, container_id, container_name, image, stream, ts, message)
-VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			hostID, r.ContainerID, r.ContainerName, r.Image, r.Stream, r.Timestamp.UnixMilli(), r.Message); err != nil {
+INSERT INTO logs (host_id, container_id, container_name, image, stream, ts, message, line_key)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(host_id, line_key) DO NOTHING`,
+			hostID, r.ContainerID, r.ContainerName, r.Image, r.Stream, r.Timestamp.UnixMilli(), r.Message, lineKey(r)); err != nil {
 			return 0, err
 		}
+		var n int
+		if err := tx.QueryRow(`SELECT changes()`).Scan(&n); err != nil {
+			return 0, err
+		}
+		accepted += n
 	}
 	if _, err := tx.Exec(`UPDATE hosts SET last_seen_at=? WHERE id=?`, now, hostID); err != nil {
 		return 0, err
@@ -73,7 +83,24 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`,
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
-	return len(records), nil
+	return accepted, nil
+}
+
+// lineKey identifies one line for a host. A retried batch carries the same
+// key, so it does not create a second row. Two identical lines in the same
+// millisecond share a key and are stored once.
+func lineKey(r protocol.Record) string {
+	sum := sha256.New()
+	sum.Write([]byte(r.ContainerID))
+	sum.Write([]byte{0})
+	sum.Write([]byte(r.Stream))
+	sum.Write([]byte{0})
+	var ts [8]byte
+	binary.BigEndian.PutUint64(ts[:], uint64(r.Timestamp.UnixMilli()))
+	sum.Write(ts[:])
+	sum.Write([]byte{0})
+	sum.Write([]byte(r.Message))
+	return hex.EncodeToString(sum.Sum(nil))
 }
 
 func (s *Store) Logs(f LogFilter) ([]protocol.LogLine, error) {

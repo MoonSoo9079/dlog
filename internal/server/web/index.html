@@ -41,7 +41,7 @@
     </aside>
     <section class="d-flex flex-column flex-grow-1 min-h-0 min-w-0">
       <div id="chips" class="d-flex align-items-center flex-shrink-0 gap-2 overflow-auto px-3 py-2 border-bottom"></div>
-      <div class="d-flex align-items-center gap-2 px-3 py-2">
+      <div class="d-flex flex-wrap align-items-center gap-2 px-3 py-2">
         <button type="button" id="older" class="btn btn-sm btn-outline-secondary">Older</button>
         <label class="visually-hidden" for="stream">Stream</label>
         <select id="stream" class="form-select form-select-sm w-auto" aria-label="Stream">
@@ -49,6 +49,14 @@
           <option value="stdout">stdout</option>
           <option value="stderr">stderr</option>
         </select>
+        <label class="visually-hidden" for="range">Time</label>
+        <select id="range" class="form-select form-select-sm w-auto" aria-label="Time">
+          <option value="">All time</option>
+          <option value="15m">Last 15 minutes</option>
+          <option value="1h">Last hour</option>
+          <option value="from">From</option>
+        </select>
+        <input id="since" class="form-control form-control-sm since-input" type="datetime-local" aria-label="Start time" hidden>
         <span id="logmeta" class="text-secondary small">Select a host</span>
       </div>
       <div id="log" class="log flex-grow-1 overflow-auto" role="log" aria-live="polite"></div>

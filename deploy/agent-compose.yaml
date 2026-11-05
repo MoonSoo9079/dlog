@@ -6,6 +6,8 @@
 #   DLOG_AGENT_CERT_FILE=./agent.crt \
 #   DLOG_AGENT_KEY_FILE=./agent.key \
 #   docker compose -f deploy/agent-compose.yaml up -d --build
+# DLOG_AGENT_CERT_FILE and DLOG_AGENT_KEY_FILE are paths on the host.
+# Inside the container the agent reads DLOG_AGENT_CERT and DLOG_AGENT_KEY.
 services:
   agent:
     build:

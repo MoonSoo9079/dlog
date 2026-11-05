@@ -364,3 +364,98 @@ func TestMigrateSessions(t *testing.T) {
 		t.Fatalf("session after migration: %+v %v %v", got, ok, err)
 	}
 }
+
+func TestIngestDropsDuplicateLine(t *testing.T) {
+	s := testStore(t)
+	host, _, err := s.CreateHost("web-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	rec := sample(now, "hello")
+	n, err := s.Ingest(host.ID, []protocol.Record{rec, rec})
+	if err != nil || n != 1 {
+		t.Fatalf("first batch: %d %v", n, err)
+	}
+	n, err = s.Ingest(host.ID, []protocol.Record{rec})
+	if err != nil || n != 0 {
+		t.Fatalf("retry: %d %v", n, err)
+	}
+	lines, err := s.Logs(LogFilter{HostID: host.ID})
+	if err != nil || len(lines) != 1 || lines[0].Message != "hello" {
+		t.Fatalf("stored: %+v %v", lines, err)
+	}
+	other := rec
+	other.Stream = "stderr"
+	n, err = s.Ingest(host.ID, []protocol.Record{other, sample(now, "next")})
+	if err != nil || n != 2 {
+		t.Fatalf("distinct lines: %d %v", n, err)
+	}
+}
+
+func TestMigrateDuplicateLinesAndDisplayName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dlog.db")
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path)+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+CREATE TABLE hosts (
+  id TEXT PRIMARY KEY,
+  hostname TEXT NOT NULL UNIQUE,
+  token_hash TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'enabled',
+  agent_version TEXT NOT NULL DEFAULT '',
+  docker_version TEXT NOT NULL DEFAULT '',
+  metadata TEXT NOT NULL DEFAULT '{}',
+  dropped INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  last_seen_at INTEGER,
+  group_id TEXT
+);
+CREATE TABLE logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id TEXT NOT NULL,
+  container_id TEXT NOT NULL,
+  container_name TEXT NOT NULL,
+  image TEXT NOT NULL DEFAULT '',
+  stream TEXT NOT NULL,
+  ts INTEGER NOT NULL,
+  message TEXT NOT NULL
+);
+INSERT INTO hosts (id, hostname, token_hash, status, created_at) VALUES ('hst_old', 'old-host', 'hash', 'enabled', 1);
+INSERT INTO logs (host_id, container_id, container_name, image, stream, ts, message) VALUES
+  ('hst_old', 'abc123abc123', 'app', 'demo:1', 'stdout', 1000, 'same'),
+  ('hst_old', 'abc123abc123', 'app', 'demo:1', 'stdout', 1000, 'same'),
+  ('hst_old', 'abc123abc123', 'app', 'demo:1', 'stdout', 1000, 'other');
+`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	lines, err := s.Logs(LogFilter{HostID: "hst_old"})
+	if err != nil || len(lines) != 2 {
+		t.Fatalf("deduped lines: %+v %v", lines, err)
+	}
+	if err := s.SetDisplayName("hst_old", "Edge"); err != nil {
+		t.Fatal(err)
+	}
+	again, _, created, err := s.Register("old-host", "0.1.0")
+	if err != nil || created || again.ID != "hst_old" || again.Hostname != "old-host" || again.DisplayName != "Edge" {
+		t.Fatalf("register kept name: %+v created=%v %v", again, created, err)
+	}
+	n, err := s.Ingest(again.ID, []protocol.Record{sample(time.UnixMilli(1000).UTC(), "same")})
+	if err != nil || n != 0 {
+		t.Fatalf("retry after migration: %d %v", n, err)
+	}
+	lines, err = s.Logs(LogFilter{HostID: again.ID})
+	if err != nil || len(lines) != 2 {
+		t.Fatalf("still two lines: %+v %v", lines, err)
+	}
+}
