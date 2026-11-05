@@ -65,7 +65,12 @@ function initApp() {
   let qTimer = 0;
   qInput.addEventListener("input", () => {
     clearTimeout(qTimer);
-    qTimer = setTimeout(() => { q = qInput.value.trim(); reload(); }, 250);
+    qTimer = setTimeout(() => {
+      const next = qInput.value.trim();
+      if (next === q) return;
+      q = next;
+      reload();
+    }, 250);
   });
   hostQEl.addEventListener("input", () => paintHosts());
   document.addEventListener("keydown", (e) => {
@@ -241,15 +246,19 @@ function initApp() {
   async function reload() {
     const my = ++gen;
     ready = false;
-    lines = [];
-    paintLines();
-    if (!hostId) { ready = true; return; }
+    if (!hostId) {
+      lines = [];
+      paintLines();
+      ready = true;
+      return;
+    }
+    // Leave the rows in place until this response arrives. Clearing first
+    // blanks the pane on every keystroke.
     try {
       const data = await api(logURL());
       if (my !== gen) return;
       lines = data.lines || [];
-      paintLines();
-      logEl.scrollTop = logEl.scrollHeight;
+      paintLines({ stick: follow && nearBottom() });
       ready = true;
     } catch (e) {
       if (my === gen && e.message !== "unauthorized") toast(e.message);
@@ -273,11 +282,12 @@ function initApp() {
       }
       if (lines.length > 3000) {
         lines = lines.slice(lines.length - 3000);
-        paintLines();
+        paintLines({ stick });
       } else {
-        metaEl.textContent = lineLabel(lines.length);
+        const label = lineLabel(lines.length);
+        if (metaEl.textContent !== label) metaEl.textContent = label;
+        if (stick) pinBottom();
       }
-      if (stick) logEl.scrollTop = logEl.scrollHeight;
     } catch (e) {
       if (e.message !== "unauthorized") toast(e.message);
     } finally {
@@ -288,24 +298,80 @@ function initApp() {
   async function loadOlder() {
     if (!hostId || !lines.length) { toast("No older lines"); return; }
     const my = gen;
-    const prev = logEl.scrollHeight;
+    const prevHeight = logEl.scrollHeight;
     try {
       const data = await api(logURL({ before_id: String(lines[0].id) }));
       if (my !== gen) return;
       if (!data.lines || !data.lines.length) { toast("No older lines"); return; }
       lines = data.lines.concat(lines);
-      paintLines();
-      logEl.scrollTop = logEl.scrollHeight - prev;
+      paintLines({ anchorHeight: prevHeight });
     } catch (e) {
       if (e.message !== "unauthorized") toast(e.message);
     }
   }
 
-  function paintLines() {
-    const frag = document.createDocumentFragment();
-    for (const ln of lines) frag.append(lineNode(ln));
-    logEl.replaceChildren(frag);
-    metaEl.textContent = hostId ? (lines.length ? lineLabel(lines.length) : "No lines") : "Select a host";
+  function pinBottom() {
+    const top = Math.max(0, logEl.scrollHeight - logEl.clientHeight);
+    if (logEl.scrollTop !== top) logEl.scrollTop = top;
+  }
+
+  function sameLineIds(want) {
+    if (logEl.childElementCount !== want.length) return false;
+    let i = 0;
+    for (const node of logEl.children) {
+      if (node.getAttribute("data-id") !== want[i]) return false;
+      i++;
+    }
+    return true;
+  }
+
+  // Patch the pane by line id. Rows that are still on screen stay the same
+  // nodes, so a filter refresh does not redraw them.
+  function paintLines(opts) {
+    opts = opts || {};
+    const want = new Array(lines.length);
+    const wantSet = new Set();
+    for (let i = 0; i < lines.length; i++) {
+      const id = String(lines[i].id);
+      want[i] = id;
+      wantSet.add(id);
+    }
+    const changed = !sameLineIds(want);
+    const manageScroll = changed && !!(opts.stick || opts.anchorHeight != null);
+    if (manageScroll) logEl.style.overflowAnchor = "none";
+    if (changed) {
+      const stale = [];
+      for (const node of logEl.children) {
+        if (!wantSet.has(node.getAttribute("data-id"))) stale.push(node);
+      }
+      for (const node of stale) node.remove();
+      let cursor = logEl.firstElementChild;
+      for (let i = 0; i < want.length; i++) {
+        const id = want[i];
+        if (cursor && cursor.getAttribute("data-id") === id) {
+          cursor = cursor.nextElementSibling;
+          continue;
+        }
+        let found = null;
+        for (let n = cursor; n; n = n.nextElementSibling) {
+          if (n.getAttribute("data-id") === id) { found = n; break; }
+        }
+        logEl.insertBefore(found || lineNode(lines[i]), cursor);
+      }
+      while (cursor) {
+        const next = cursor.nextElementSibling;
+        cursor.remove();
+        cursor = next;
+      }
+    }
+    const label = hostId ? (lines.length ? lineLabel(lines.length) : "No lines") : "Select a host";
+    if (metaEl.textContent !== label) metaEl.textContent = label;
+    if (opts.stick) pinBottom();
+    else if (opts.anchorHeight != null) {
+      const top = logEl.scrollHeight - opts.anchorHeight;
+      if (logEl.scrollTop !== top) logEl.scrollTop = top;
+    }
+    if (manageScroll) logEl.style.overflowAnchor = "";
   }
 
   function logURL(extra) {
@@ -535,7 +601,11 @@ function statusBadge(h) {
 
 function lineNode(ln) {
   const streamClass = ln.stream === "stderr" ? "text-bg-danger" : "text-bg-secondary";
-  return el("div", { class: "log-line" + (ln.stream === "stderr" ? " stderr" : ""), title: ln.image || "" }, [
+  return el("div", {
+    class: "log-line" + (ln.stream === "stderr" ? " stderr" : ""),
+    title: ln.image || "",
+    "data-id": String(ln.id),
+  }, [
     el("span", { class: "ts" }, [formatTime(ln.timestamp)]),
     el("span", { class: "name" }, [ln.container_name || ln.container_id]),
     el("span", { class: "badge " + streamClass }, [ln.stream]),
