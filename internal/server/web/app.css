@@ -1,0 +1,199 @@
+[data-bs-theme="dark"] {
+  --bs-body-bg: #121612;
+  --bs-body-color: #e7eee4;
+  --bs-secondary-color: #93a094;
+  --bs-tertiary-color: #b7c3b4;
+  --bs-emphasis-color: #f4f7f1;
+  --bs-secondary-bg: #1c241c;
+  --bs-tertiary-bg: #0e130e;
+  --bs-border-color: #2c382c;
+  --bs-primary: #e4b15a;
+  --bs-primary-rgb: 228, 177, 90;
+  --bs-warning: #e4b15a;
+  --bs-warning-rgb: 228, 177, 90;
+  --bs-success: #8ed07a;
+  --bs-success-rgb: 142, 208, 122;
+  --bs-danger: #e08b72;
+  --bs-danger-rgb: 224, 139, 114;
+  --bs-link-color: #e4b15a;
+  --bs-link-hover-color: #f0c98a;
+  --bs-focus-ring-color: rgba(228, 177, 90, 0.35);
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: #e4b15a;
+  box-shadow: 0 0 0 0.2rem rgba(228, 177, 90, 0.25);
+}
+
+body {
+  background:
+    radial-gradient(900px 420px at 0% -10%, rgba(228, 177, 90, 0.08), transparent 55%),
+    var(--bs-body-bg);
+}
+
+.min-h-0 { min-height: 0; }
+
+.brand { letter-spacing: 0.06em; }
+
+.lamp {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: #e4b15a;
+  box-shadow: 0 0 0 4px rgba(228, 177, 90, 0.16);
+}
+
+.top-search { flex: 1 1 16rem; }
+
+/* Native button metrics draw the pill face away from the label. */
+#chips .btn {
+  -webkit-appearance: none;
+  appearance: none;
+  line-height: 1.25;
+}
+
+.login-card { width: min(420px, 100%); }
+
+.host-pane {
+  background: var(--bs-tertiary-bg);
+  max-height: 34vh;
+}
+
+.host-tools {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bs-tertiary-bg);
+}
+
+.host-group {
+  gap: 0.5rem;
+  padding: 0.55rem 0.9rem 0.15rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}
+
+.host-group .label { min-width: 0; }
+
+.host-group .label::before {
+  content: "";
+  display: inline-block;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-right: 0.4rem;
+  border-radius: 2px;
+  background: #e4b15a;
+  vertical-align: 1px;
+}
+
+.host-group.is-loose .label::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--bs-secondary-color);
+}
+
+.host-group .count {
+  flex: 0 0 auto;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+#drawer-hosts .form-select {
+  width: auto;
+  min-width: 8.5rem;
+  flex: 1 1 8.5rem;
+}
+
+@media (min-width: 768px) {
+  .host-pane {
+    width: 280px;
+    flex: 0 0 280px;
+    max-height: none;
+  }
+}
+
+#hosts .list-group-item {
+  background: transparent;
+  color: inherit;
+  border-color: transparent;
+  border-left: 3px solid transparent;
+  border-radius: 0;
+}
+
+#hosts .list-group-item.active {
+  background: #241c10;
+  border-color: transparent;
+  border-left-color: #e4b15a;
+  color: inherit;
+}
+
+.dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-top: 0.4rem;
+  border-radius: 50%;
+  background: #5c675c;
+  flex: 0 0 auto;
+}
+
+.dot.on { background: #8ed07a; }
+.dot.off { background: #e08b72; }
+
+.log {
+  background: #0c100c;
+  border-top: 1px solid var(--bs-border-color);
+  font-family: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.log-line {
+  display: grid;
+  grid-template-columns: 11.5rem minmax(7rem, 12rem) auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.12rem 0.9rem;
+}
+
+.log-line:hover { background: rgba(255, 255, 255, 0.03); }
+
+.log-line .ts { color: var(--bs-secondary-color); }
+
+.log-line .name {
+  color: #d7c29a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-line .msg { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.log-line.stderr { box-shadow: inset 2px 0 0 #e08b72; }
+.log-line.stderr .msg { color: #f0c2b6; }
+
+.offcanvas { --bs-offcanvas-width: min(480px, 100vw); }
+
+@media (max-width: 767.98px) {
+  body.vh-100 { height: 100vh; height: 100dvh; }
+  .host-pane { max-height: 13.5rem; }
+  .log { min-height: 0; }
+  .offcanvas { --bs-offcanvas-width: 100vw; }
+  .log-line {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "ts stream"
+      "name name"
+      "msg msg";
+    gap: 0.05rem 0.5rem;
+    padding: 0.35rem 0.75rem 0.45rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  .log-line .ts { grid-area: ts; }
+  .log-line .name { grid-area: name; white-space: normal; }
+  .log-line > .badge { grid-area: stream; justify-self: end; }
+  .log-line .msg { grid-area: msg; }
+}

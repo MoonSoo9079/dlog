@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dlog login</title>
+  <link rel="stylesheet" href="/bootstrap.min.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body class="d-flex align-items-center justify-content-center min-vh-100 p-3">
+  <form class="login-card card shadow" method="post" action="/api/v1/login">
+    <div class="card-body p-4">
+      <div class="brand d-flex align-items-center gap-2 mb-2">
+        <span class="lamp" aria-hidden="true"></span>
+        <span class="h4 mb-0">Dlog</span>
+      </div>
+      <p class="text-secondary">Operator console. Agents register with the shared certificate.</p>
+      <label class="form-label" for="token">Admin token</label>
+      <input id="token" name="token" class="form-control" type="password" autocomplete="current-password" required autofocus>
+      <button type="submit" class="btn btn-warning w-100 mt-3">Enter</button>
+      <p id="login-error" class="text-danger mt-3 mb-0" hidden>Wrong token.</p>
+    </div>
+  </form>
+  <script src="/bootstrap.bundle.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

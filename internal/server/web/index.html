@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dlog</title>
+  <link rel="stylesheet" href="/bootstrap.min.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body class="d-flex flex-column vh-100">
+  <header class="border-bottom px-3 py-2 d-flex flex-wrap align-items-center gap-2 flex-shrink-0">
+    <div class="brand d-flex align-items-center gap-2 fw-semibold">
+      <span class="lamp" aria-hidden="true"></span>
+      <span>Dlog</span>
+    </div>
+    <div class="top-search">
+      <label class="visually-hidden" for="q">Search lines</label>
+      <input id="q" class="form-control" type="search" placeholder="Search lines  (/)" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="d-flex align-items-center gap-2 ms-md-auto">
+      <span id="version" class="badge text-bg-secondary"></span>
+      <button type="button" id="follow" class="btn btn-sm btn-warning on" aria-pressed="true">Follow</button>
+      <button type="button" id="manage" class="btn btn-sm btn-outline-light">Hosts</button>
+      <button type="button" id="logout" class="btn btn-sm btn-outline-secondary">Log out</button>
+    </div>
+  </header>
+  <div class="d-flex flex-column flex-md-row flex-grow-1 min-h-0">
+    <aside class="host-pane border-end overflow-auto d-flex flex-column">
+      <div class="host-tools">
+        <div class="px-3 pt-2 pb-1 text-secondary small text-uppercase d-flex justify-content-between">
+          <span>Hosts</span>
+          <span id="host-count"></span>
+        </div>
+        <div class="px-3 pb-2">
+          <label class="visually-hidden" for="host-q">Search hosts</label>
+          <input id="host-q" class="form-control form-control-sm" type="search" placeholder="Search hosts" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+      <div id="hosts" class="list-group list-group-flush"></div>
+    </aside>
+    <section class="d-flex flex-column flex-grow-1 min-h-0 min-w-0">
+      <div id="chips" class="d-flex align-items-center flex-shrink-0 gap-2 overflow-auto px-3 py-2 border-bottom"></div>
+      <div class="d-flex align-items-center gap-2 px-3 py-2">
+        <button type="button" id="older" class="btn btn-sm btn-outline-secondary">Older</button>
+        <label class="visually-hidden" for="stream">Stream</label>
+        <select id="stream" class="form-select form-select-sm w-auto" aria-label="Stream">
+          <option value="">All streams</option>
+          <option value="stdout">stdout</option>
+          <option value="stderr">stderr</option>
+        </select>
+        <span id="logmeta" class="text-secondary small">Select a host</span>
+      </div>
+      <div id="log" class="log flex-grow-1 overflow-auto" role="log" aria-live="polite"></div>
+    </section>
+  </div>
+  <div id="drawer" class="offcanvas offcanvas-end" tabindex="-1" aria-labelledby="drawer-title">
+    <div class="offcanvas-header border-bottom">
+      <h2 class="offcanvas-title h5 mb-0" id="drawer-title">Hosts</h2>
+      <button type="button" id="drawer-close" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div id="drawer-body" class="offcanvas-body"></div>
+  </div>
+  <div class="toast-container position-fixed bottom-0 start-50 translate-middle-x p-3">
+    <div id="toast" class="toast align-items-center text-bg-dark border" role="status" aria-live="polite" aria-atomic="true">
+      <div id="toast-body" class="toast-body"></div>
+    </div>
+  </div>
+  <script src="/bootstrap.bundle.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

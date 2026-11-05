@@ -1,0 +1,201 @@
+package server
+
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"dlog/internal/protocol"
+
+	_ "modernc.org/sqlite"
+)
+
+const (
+	HostEnabled  = "enabled"
+	HostDisabled = "disabled"
+	OnlineWindow = 45 * time.Second
+)
+
+var (
+	ErrNotFound     = errors.New("not found")
+	ErrConflict     = errors.New("already exists")
+	ErrUnauthorized = errors.New("unauthorized")
+	ErrDisabled     = errors.New("disabled")
+)
+
+type Store struct {
+	db *sql.DB
+}
+
+func Open(path string) (*Store, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	dsn := "file:" + filepath.ToSlash(abs) + "?mode=rwc&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	for _, q := range []string{
+		"PRAGMA journal_mode=WAL",
+		"PRAGMA synchronous=NORMAL",
+		"PRAGMA foreign_keys=ON",
+		"PRAGMA busy_timeout=5000",
+	} {
+		if err := execPragma(db, q); err != nil {
+			if strings.Contains(q, "journal_mode") {
+				if err2 := execPragma(db, "PRAGMA journal_mode=DELETE"); err2 != nil {
+					db.Close()
+					return nil, fmt.Errorf("%s: %w", q, err)
+				}
+				continue
+			}
+			db.Close()
+			return nil, fmt.Errorf("%s: %w", q, err)
+		}
+	}
+	if err := execScript(db, schema); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := migrateHostGroups(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return &Store{db: db}, nil
+}
+
+func execPragma(db *sql.DB, q string) error {
+	rows, err := db.Query(q)
+	if err != nil {
+		return err
+	}
+	return rows.Close()
+}
+
+func execScript(db *sql.DB, script string) error {
+	for _, stmt := range strings.Split(script, ";") {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("schema: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *Store) Close() error {
+	return s.db.Close()
+}
+
+const schema = `
+CREATE TABLE IF NOT EXISTS host_groups (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_host_groups_name ON host_groups(name COLLATE NOCASE);
+
+CREATE TABLE IF NOT EXISTS hosts (
+  id TEXT PRIMARY KEY,
+  hostname TEXT NOT NULL UNIQUE,
+  token_hash TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'enabled',
+  agent_version TEXT NOT NULL DEFAULT '',
+  docker_version TEXT NOT NULL DEFAULT '',
+  metadata TEXT NOT NULL DEFAULT '{}',
+  dropped INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  last_seen_at INTEGER,
+  group_id TEXT REFERENCES host_groups(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS containers (
+  host_id TEXT NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  container_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  image TEXT NOT NULL DEFAULT '',
+  labels TEXT NOT NULL DEFAULT '{}',
+  state TEXT NOT NULL DEFAULT 'running',
+  last_seen_at INTEGER NOT NULL,
+  PRIMARY KEY (host_id, container_id)
+);
+
+CREATE TABLE IF NOT EXISTS logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id TEXT NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  container_id TEXT NOT NULL,
+  container_name TEXT NOT NULL,
+  image TEXT NOT NULL DEFAULT '',
+  stream TEXT NOT NULL,
+  ts INTEGER NOT NULL,
+  message TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_logs_host_id ON logs(host_id, id);
+CREATE INDEX IF NOT EXISTS idx_logs_host_ctr_id ON logs(host_id, container_id, id);
+CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs(ts);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id_hash TEXT PRIMARY KEY,
+  expires_at INTEGER NOT NULL
+);
+`
+
+// migrateHostGroups adds hosts.group_id on databases created before groups
+// existed. CREATE TABLE IF NOT EXISTS does not alter a live hosts table, and
+// the group index cannot be in schema because that script runs first.
+func migrateHostGroups(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(hosts)`)
+	if err != nil {
+		return err
+	}
+	has := false
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "group_id" {
+			has = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	if !has {
+		if _, err := db.Exec(`ALTER TABLE hosts ADD COLUMN group_id TEXT REFERENCES host_groups(id) ON DELETE SET NULL`); err != nil {
+			return fmt.Errorf("hosts.group_id: %w", err)
+		}
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_hosts_group ON hosts(group_id)`); err != nil {
+		return fmt.Errorf("idx_hosts_group: %w", err)
+	}
+	return nil
+}
+
+func isUnique(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "UNIQUE")
+}
+
+func clipVersion(s string) string {
+	return protocol.Clip(strings.TrimSpace(s), protocol.MaxVersion)
+}
