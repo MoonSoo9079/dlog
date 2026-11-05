@@ -1,0 +1,106 @@
+package server
+
+import (
+	"net/http"
+	"strings"
+)
+
+func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, principalFrom(r))
+}
+
+func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
+	users, err := s.store.ListUsers()
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
+func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Role     string `json:"role"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, statusForDecode(err), "bad request")
+		return
+	}
+	body.Username = strings.TrimSpace(body.Username)
+	body.Role = strings.TrimSpace(body.Role)
+	if !validUsername(body.Username) {
+		writeError(w, http.StatusBadRequest, "invalid username")
+		return
+	}
+	if !validPassword(body.Password) {
+		writeError(w, http.StatusBadRequest, "password must be 8 to 72 characters")
+		return
+	}
+	if !validRole(body.Role) {
+		writeError(w, http.StatusBadRequest, "invalid role")
+		return
+	}
+	acct, err := s.store.CreateUser(body.Username, body.Password, body.Role)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, acct)
+}
+
+func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Role     *string `json:"role"`
+		Password *string `json:"password"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, statusForDecode(err), "bad request")
+		return
+	}
+	if body.Role == nil && body.Password == nil {
+		writeError(w, http.StatusBadRequest, "nothing to change")
+		return
+	}
+	if body.Password != nil && !validPassword(*body.Password) {
+		writeError(w, http.StatusBadRequest, "password must be 8 to 72 characters")
+		return
+	}
+	if body.Role != nil {
+		role := strings.TrimSpace(*body.Role)
+		if !validRole(role) {
+			writeError(w, http.StatusBadRequest, "invalid role")
+			return
+		}
+		if err := s.store.SetUserRole(r.PathValue("id"), role); err != nil {
+			writeStoreError(w, err)
+			return
+		}
+	}
+	if body.Password != nil {
+		if err := s.store.SetPassword(r.PathValue("id"), *body.Password); err != nil {
+			writeStoreError(w, err)
+			return
+		}
+	}
+	acct, err := s.store.User(r.PathValue("id"))
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, acct)
+}
+
+func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if principalFrom(r).ID == id {
+		writeError(w, http.StatusBadRequest, "cannot delete the signed-in account")
+		return
+	}
+	if err := s.store.DeleteUser(id); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

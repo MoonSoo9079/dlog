@@ -14,14 +14,19 @@ import (
 	"dlog/internal/protocol"
 )
 
+const testAdminPassword = "admin-test-password"
+
 func testServer(t *testing.T) (*httptest.Server, *Store, *agentcred.Key) {
 	t.Helper()
 	st := testStore(t)
+	if _, err := st.CreateUser("admin", testAdminPassword, RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
 	key, err := agentcred.Generate()
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := New(st, "admin-test-token", key.Certificate(), false, false).Handler()
+	h := New(st, key.Certificate(), false, false).Handler()
 	ts := httptest.NewServer(h)
 	t.Cleanup(ts.Close)
 	return ts, st, key
@@ -44,7 +49,9 @@ func do(t *testing.T, client *http.Client, method, url, token, body string) *htt
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/json")
-	if token != "" {
+	if strings.HasPrefix(token, "ses_") {
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: token})
+	} else if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	res, err := client.Do(req)
@@ -52,6 +59,27 @@ func do(t *testing.T, client *http.Client, method, url, token, body string) *htt
 		t.Fatal(err)
 	}
 	return res
+}
+
+func login(t *testing.T, client *http.Client, base, username, password string) string {
+	t.Helper()
+	body, err := json.Marshal(map[string]string{"username": username, "password": password})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := do(t, client, http.MethodPost, base+"/api/v1/login", "", string(body))
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("login %s: %d %s", username, res.StatusCode, b)
+	}
+	for _, c := range res.Cookies() {
+		if c.Name == sessionCookie {
+			return c.Value
+		}
+	}
+	t.Fatal("missing session cookie")
+	return ""
 }
 
 func TestHTTPAuthIngestAndUI(t *testing.T) {
@@ -74,7 +102,7 @@ func TestHTTPAuthIngestAndUI(t *testing.T) {
 	res = do(t, client, http.MethodGet, ts.URL+"/login", "", "")
 	page, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 200 || !strings.Contains(string(page), "Admin token") || !strings.Contains(string(page), "/bootstrap.min.css") {
+	if res.StatusCode != 200 || !strings.Contains(string(page), "Username") || !strings.Contains(string(page), "Password") || !strings.Contains(string(page), "/bootstrap.min.css") {
 		t.Fatalf("login page: %d", res.StatusCode)
 	}
 
@@ -95,13 +123,13 @@ func TestHTTPAuthIngestAndUI(t *testing.T) {
 		t.Fatalf("bootstrap js: %d", res.StatusCode)
 	}
 
-	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/login", "", `{"token":"wrong-token-value"}`)
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/login", "", `{"username":"admin","password":"wrong-password"}`)
 	res.Body.Close()
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("bad login: %d", res.StatusCode)
 	}
 
-	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/login", "", `{"token":"admin-test-token"}`)
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/login", "", `{"username":"admin","password":"`+testAdminPassword+`"}`)
 	if res.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(res.Body)
 		t.Fatalf("login: %d %s", res.StatusCode, b)
@@ -160,6 +188,7 @@ func TestHTTPAuthIngestAndUI(t *testing.T) {
 func TestHTTPLogsAndDisable(t *testing.T) {
 	ts, st, key := testServer(t)
 	client := noRedirect(t)
+	admin := login(t, client, ts.URL, "admin", testAdminPassword)
 	host, hostToken, err := st.CreateHost("edge-2")
 	if err != nil {
 		t.Fatal(err)
@@ -172,20 +201,20 @@ func TestHTTPLogsAndDisable(t *testing.T) {
 	if res.StatusCode != 200 {
 		t.Fatalf("ingest status %d", res.StatusCode)
 	}
-	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/logs?host_id="+hostID+"&stream=stderr", "admin-test-token", "")
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/logs?host_id="+hostID+"&stream=stderr", admin, "")
 	b, _ := io.ReadAll(res.Body)
 	res.Body.Close()
 	if res.StatusCode != 200 || !strings.Contains(string(b), "boom") {
 		t.Fatalf("logs: %d %s", res.StatusCode, b)
 	}
-	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/logs?host_id="+hostID+"&stream=stdout", "admin-test-token", "")
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/logs?host_id="+hostID+"&stream=stdout", admin, "")
 	b, _ = io.ReadAll(res.Body)
 	res.Body.Close()
 	if strings.Contains(string(b), "boom") {
 		t.Fatalf("stdout filter leaked stderr: %s", b)
 	}
 
-	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/hosts/"+hostID+"/disable", "admin-test-token", "")
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/hosts/"+hostID+"/disable", admin, "")
 	res.Body.Close()
 	if res.StatusCode != http.StatusNoContent {
 		t.Fatalf("disable: %d", res.StatusCode)
@@ -235,7 +264,7 @@ func TestHTTPLogsAndDisable(t *testing.T) {
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("wrong certificate: %d", res.StatusCode)
 	}
-	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/hosts/"+first.HostID+"/disable", "admin-test-token", "")
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/hosts/"+first.HostID+"/disable", admin, "")
 	res.Body.Close()
 	res = register(t, client, ts.URL, key, "node-9", time.Now())
 	res.Body.Close()
@@ -247,21 +276,22 @@ func TestHTTPLogsAndDisable(t *testing.T) {
 func TestAdminGroups(t *testing.T) {
 	ts, st, _ := testServer(t)
 	client := noRedirect(t)
+	admin := login(t, client, ts.URL, "admin", testAdminPassword)
 	host, _, err := st.CreateHost("web-01")
 	if err != nil {
 		t.Fatal(err)
 	}
-	res := do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/groups", "admin-test-token", `{"name":"-bad"}`)
+	res := do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/groups", admin, `{"name":"-bad"}`)
 	res.Body.Close()
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("invalid name: %d", res.StatusCode)
 	}
-	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/groups", "admin-test-token", `{"name":"  Edge Nodes  ","extra":1}`)
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/groups", admin, `{"name":"  Edge Nodes  ","extra":1}`)
 	res.Body.Close()
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("unknown field: %d", res.StatusCode)
 	}
-	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/groups", "admin-test-token", `{"name":"  Edge Nodes  "}`)
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/groups", admin, `{"name":"  Edge Nodes  "}`)
 	body, _ := io.ReadAll(res.Body)
 	res.Body.Close()
 	if res.StatusCode != http.StatusCreated {
@@ -271,33 +301,33 @@ func TestAdminGroups(t *testing.T) {
 	if err := json.Unmarshal(body, &edge); err != nil || edge.Name != "Edge Nodes" || edge.HostCount != 0 {
 		t.Fatalf("group body: %s %v", body, err)
 	}
-	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/groups", "admin-test-token", `{"name":"edge nodes"}`)
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/groups", admin, `{"name":"edge nodes"}`)
 	res.Body.Close()
 	if res.StatusCode != http.StatusConflict {
 		t.Fatalf("duplicate: %d", res.StatusCode)
 	}
-	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/groups/"+edge.ID, "admin-test-token", `{"name":"Edge"}`)
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/groups/"+edge.ID, admin, `{"name":"Edge"}`)
 	body, _ = io.ReadAll(res.Body)
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"name":"Edge"`) {
 		t.Fatalf("rename: %d %s", res.StatusCode, body)
 	}
-	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/hosts/"+host.ID+"/group", "admin-test-token", `{}`)
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/hosts/"+host.ID+"/group", admin, `{}`)
 	res.Body.Close()
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("missing group_id: %d", res.StatusCode)
 	}
-	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/hosts/"+host.ID+"/group", "admin-test-token", `{"group_id":"grp_missing"}`)
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/hosts/"+host.ID+"/group", admin, `{"group_id":"grp_missing"}`)
 	res.Body.Close()
 	if res.StatusCode != http.StatusNotFound {
 		t.Fatalf("missing group: %d", res.StatusCode)
 	}
-	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/hosts/"+host.ID+"/group", "admin-test-token", `{"group_id":"`+edge.ID+`"}`)
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/hosts/"+host.ID+"/group", admin, `{"group_id":"`+edge.ID+`"}`)
 	res.Body.Close()
 	if res.StatusCode != http.StatusNoContent {
 		t.Fatalf("assign: %d", res.StatusCode)
 	}
-	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/hosts", "admin-test-token", "")
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/hosts", admin, "")
 	body, _ = io.ReadAll(res.Body)
 	res.Body.Close()
 	var listed struct {
@@ -310,7 +340,7 @@ func TestAdminGroups(t *testing.T) {
 	if len(listed.Hosts) != 1 || listed.Hosts[0].GroupID != edge.ID || len(listed.Groups) != 1 || listed.Groups[0].HostCount != 1 {
 		t.Fatalf("list: %s", body)
 	}
-	res = do(t, client, http.MethodDelete, ts.URL+"/api/v1/admin/groups/"+edge.ID, "admin-test-token", "")
+	res = do(t, client, http.MethodDelete, ts.URL+"/api/v1/admin/groups/"+edge.ID, admin, "")
 	res.Body.Close()
 	if res.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete: %d", res.StatusCode)
@@ -319,10 +349,157 @@ func TestAdminGroups(t *testing.T) {
 	if err != nil || got.GroupID != "" {
 		t.Fatalf("ungrouped: %+v %v", got, err)
 	}
-	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/hosts/"+host.ID+"/group", "admin-test-token", `{"group_id":""}`)
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/hosts/"+host.ID+"/group", admin, `{"group_id":""}`)
 	res.Body.Close()
 	if res.StatusCode != http.StatusNoContent {
 		t.Fatalf("clear: %d", res.StatusCode)
+	}
+}
+
+func TestAccounts(t *testing.T) {
+	ts, _, _ := testServer(t)
+	client := noRedirect(t)
+
+	res := do(t, client, http.MethodGet, ts.URL+"/admin", "", "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusFound || !strings.Contains(res.Header.Get("Location"), "/login") {
+		t.Fatalf("admin redirect: %d %s", res.StatusCode, res.Header.Get("Location"))
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/hosts", "admin-token-is-gone", "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("bearer token: %d", res.StatusCode)
+	}
+
+	admin := login(t, client, ts.URL, "admin", testAdminPassword)
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/me", admin, "")
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || !strings.Contains(string(body), `"role":"admin"`) {
+		t.Fatalf("me: %d %s", res.StatusCode, body)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/admin", admin, "")
+	page, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || !strings.Contains(string(page), "New account") {
+		t.Fatalf("admin page: %d", res.StatusCode)
+	}
+
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/users", admin, `{"username":"ada","password":"short","role":"user"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("short password: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/users", admin, `{"username":"-ada","password":"reader-password","role":"user"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bad username: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/users", admin, `{"username":"ada","password":"reader-password","role":"owner"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bad role: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/users", admin, `{"username":"ada","password":"reader-password","role":"user","extra":1}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unknown field: %d", res.StatusCode)
+	}
+
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/users", admin, `{"username":"ada","password":"reader-password","role":"user"}`)
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusCreated || !strings.Contains(string(body), `"username":"ada"`) {
+		t.Fatalf("create: %d %s", res.StatusCode, body)
+	}
+	var ada Account
+	if err := json.Unmarshal(body, &ada); err != nil || !strings.HasPrefix(ada.ID, "usr_") || ada.Role != RoleUser {
+		t.Fatalf("account: %s %v", body, err)
+	}
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/users", admin, `{"username":"Ada","password":"reader-password","role":"user"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("duplicate: %d", res.StatusCode)
+	}
+
+	user := login(t, client, ts.URL, "ada", "reader-password")
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/hosts", user, "")
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("user hosts: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/groups", user, `{"name":"Nope"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("user create group: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/admin/users", user, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("user list accounts: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/admin", user, "")
+	page, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden || !strings.Contains(string(page), "Admins only") {
+		t.Fatalf("user admin page: %d", res.StatusCode)
+	}
+
+	var me Account
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/me", admin, "")
+	meBody, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if err := json.Unmarshal(meBody, &me); err != nil {
+		t.Fatal(err)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/users/"+me.ID, admin, `{"role":"user"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("demote last admin: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodDelete, ts.URL+"/api/v1/admin/users/"+me.ID, admin, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "signed-in") {
+		t.Fatalf("delete self: %d %s", res.StatusCode, body)
+	}
+	res = do(t, client, http.MethodDelete, ts.URL+"/api/v1/admin/users/"+ada.ID, admin, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete user: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/hosts", user, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("deleted user session: %d", res.StatusCode)
+	}
+
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/users", admin, `{"username":"ada","password":"reader-password","role":"admin"}`)
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("recreate: %d %s", res.StatusCode, body)
+	}
+	if err := json.Unmarshal(body, &ada); err != nil {
+		t.Fatal(err)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/users/"+ada.ID, admin, `{"password":"reader-password-2"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("set password: %d", res.StatusCode)
+	}
+	if got := login(t, client, ts.URL, "ada", "reader-password-2"); !strings.HasPrefix(got, "ses_") {
+		t.Fatalf("new password session: %s", got)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/users/"+me.ID, admin, `{"role":"user"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("demote with another admin: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/admin/users", admin, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("demoted admin: %d", res.StatusCode)
 	}
 }
 

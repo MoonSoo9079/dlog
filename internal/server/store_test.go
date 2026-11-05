@@ -2,6 +2,7 @@ package server
 
 import (
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -255,19 +256,111 @@ func TestPurgeAndSession(t *testing.T) {
 	if err != nil || len(lines) != 1 || lines[0].Message != "new" {
 		t.Fatalf("after purge: %+v %v", lines, err)
 	}
-	raw, _, err := s.CreateSession(time.Hour)
+	acct, err := s.CreateUser("ada", "password-ok", RoleAdmin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ok, err := s.TouchSession(raw, time.Hour)
-	if err != nil || !ok {
-		t.Fatalf("touch: %v %v", ok, err)
+	raw, _, err := s.CreateSession(acct.ID, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.TouchSession(raw, time.Hour)
+	if err != nil || !ok || got.Username != "ada" {
+		t.Fatalf("touch: %+v %v %v", got, ok, err)
 	}
 	if err := s.DeleteSession(raw); err != nil {
 		t.Fatal(err)
 	}
-	ok, err = s.TouchSession(raw, time.Hour)
+	_, ok, err = s.TouchSession(raw, time.Hour)
 	if err != nil || ok {
 		t.Fatalf("deleted session still valid: %v %v", ok, err)
+	}
+}
+
+func TestUsers(t *testing.T) {
+	s := testStore(t)
+	admin, err := s.CreateUser("Admin", "password-ok", RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateUser("admin", "password-ok", RoleUser); !errors.Is(err, ErrConflict) {
+		t.Fatalf("duplicate: %v", err)
+	}
+	if _, err := s.Authenticate("admin", "nope-nope"); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("bad password: %v", err)
+	}
+	got, err := s.Authenticate("admin", "password-ok")
+	if err != nil || got.ID != admin.ID || got.Username != "Admin" {
+		t.Fatalf("auth: %+v %v", got, err)
+	}
+	if err := s.SetUserRole(admin.ID, RoleUser); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("demote last: %v", err)
+	}
+	if err := s.DeleteUser(admin.ID); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("delete last: %v", err)
+	}
+	other, err := s.CreateUser("reader", "password-ok", RoleUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetUserRole(other.ID, RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetUserRole(admin.ID, RoleUser); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPassword(other.ID, "password-ok-2"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Authenticate("reader", "password-ok"); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("old password: %v", err)
+	}
+	if _, err := s.Authenticate("reader", "password-ok-2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteUser(admin.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteUser(other.ID); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("delete remaining admin: %v", err)
+	}
+	users, err := s.ListUsers()
+	if err != nil || len(users) != 1 || users[0].ID != other.ID || users[0].Role != RoleAdmin {
+		t.Fatalf("list: %+v %v", users, err)
+	}
+}
+
+func TestMigrateSessions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dlog.db")
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path)+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE sessions (id_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessions (id_hash, expires_at) VALUES ('old', 9999999999999)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	acct, err := s.CreateUser("admin", "password-ok", RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _, err := s.CreateSession(acct.ID, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.TouchSession(raw, time.Hour)
+	if err != nil || !ok || got.ID != acct.ID {
+		t.Fatalf("session after migration: %+v %v %v", got, ok, err)
 	}
 }

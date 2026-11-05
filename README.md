@@ -34,7 +34,8 @@ Requires Go 1.26 or newer.
 make build
 make test
 
-DLOG_ADMIN_TOKEN=local-dev-admin-token \
+DLOG_ADMIN_USER=admin \
+DLOG_ADMIN_PASSWORD=local-dev-admin-password \
 ./bin/dlog-server
 
 # second shell, on a machine with a Docker socket
@@ -45,9 +46,9 @@ DLOG_HOSTNAME="$(hostname)" \
 ./bin/dlog-agent
 ```
 
-Open http://127.0.0.1:8080 and sign in with `local-dev-admin-token`. That value is for a local lab. The server logs a warning when the admin token is short, and when it has just generated the agent certificate.
+Open http://127.0.0.1:8080 and sign in as `admin` with `local-dev-admin-password`. That password is for a local lab. The server logs a warning when it is short, and when it has just generated the agent certificate.
 
-If you do not set an admin token, the first start writes one to `data/server/admin.token` and prints it once. The agent certificate is written beside it as `agent.crt` and `agent.key`.
+If you do not set a password, the first start creates the admin account, writes the password to `data/server/admin.password`, and prints it once. Later starts leave existing accounts alone. The agent certificate is written beside it as `agent.crt` and `agent.key`.
 
 ### Containers
 
@@ -55,7 +56,7 @@ If you do not set an admin token, the first start writes one to `data/server/adm
 docker compose up --build
 ```
 
-The lab agent mounts the host Docker socket, so it ships logs from every container on that daemon, not only the compose services. It registers as `dlog-lab` with the certificate the server generates into the `dlog-cred` volume. A `logger` service writes a stdout line and a stderr line every three seconds. Sign in at http://127.0.0.1:8080 with `local-dev-admin-token`.
+The lab agent mounts the host Docker socket, so it ships logs from every container on that daemon, not only the compose services. It registers as `dlog-lab` with the certificate the server generates into the `dlog-cred` volume. A `logger` service writes a stdout line and a stderr line every three seconds. Sign in at http://127.0.0.1:8080 as `admin` with `local-dev-admin-password`.
 
 To run only the agent on another host, copy `agent.crt` and `agent.key` from the server and mount those same files:
 
@@ -90,13 +91,14 @@ The console is served by `dlog-server`.
 - Hosts on the left, container filters across the top, log lines in the main pane.
 - Search the host list by hostname or group name. Click a group header to collapse it. A search shows matches even inside a collapsed group. The line search matches text literally. `%` and `_` are not wildcards.
 - Follow tails new lines. Older loads the previous page.
-- Hosts opens a panel to create, rename, and delete groups, move a host into one group, and disable, enable, or delete hosts. Hosts appear on their own after an agent registers.
+- Hosts opens a panel to create, rename, and delete groups, move a host into one group, and disable, enable, or delete hosts. Hosts appear on their own after an agent registers. Only admins see that panel.
+- Admin opens a page to create accounts and set each one to User or Admin. Users can read logs. Admins can also manage hosts, groups, and accounts. An admin cannot delete the signed-in account or remove the last admin.
 
 Deleting a host deletes its stored logs. The agent will register that hostname again if it still has the certificate and the host was not left disabled. Disable a host to refuse it.
 
 ## HTTP API
 
-`POST /api/v1/register` is signed with the agent private key. The signature is the `X-Dlog-Signature` header, base64url of the ECDSA signature over the SHA-256 of the raw JSON body. The body is `{"hostname","agent_version","timestamp"}`. Ingest and heartbeat then send `Authorization: Bearer <host token>`, the token the agent saved at registration. Operator routes take the admin token the same way, or the `dlog_session` cookie from `POST /api/v1/login`.
+`POST /api/v1/register` is signed with the agent private key. The signature is the `X-Dlog-Signature` header, base64url of the ECDSA signature over the SHA-256 of the raw JSON body. The body is `{"hostname","agent_version","timestamp"}`. Ingest and heartbeat then send `Authorization: Bearer <host token>`, the token the agent saved at registration. Operator routes use the `dlog_session` cookie from `POST /api/v1/login`. A user account can read. An admin account can also change hosts, groups, and accounts.
 
 | Method | Path | Who |
 | --- | --- | --- |
@@ -104,20 +106,27 @@ Deleting a host deletes its stored logs. The agent will register that hostname a
 | POST | `/api/v1/register` | agent certificate |
 | POST | `/api/v1/ingest` | host token |
 | POST | `/api/v1/heartbeat` | host token |
-| POST | `/api/v1/login` | admin token, sets the session cookie |
-| GET | `/api/v1/hosts` | operator. Body is `{"hosts","groups"}`. Each host has `group_id` (`""` when ungrouped). |
-| GET | `/api/v1/containers?host_id=` | operator |
-| GET | `/api/v1/logs?host_id=&container_id=&stream=&q=&limit=&after_id=&before_id=` | operator |
-| POST | `/api/v1/admin/groups` | operator, body `{"name"}`, 201 |
-| PATCH | `/api/v1/admin/groups/{id}` | operator, body `{"name"}` |
-| DELETE | `/api/v1/admin/groups/{id}` | operator. Hosts in the group stay, ungrouped. |
-| POST | `/api/v1/admin/hosts/{id}/disable` | operator |
-| POST | `/api/v1/admin/hosts/{id}/enable` | operator |
-| PATCH | `/api/v1/admin/hosts/{id}` | operator, body `{"hostname":"new-name"}` |
-| PATCH | `/api/v1/admin/hosts/{id}/group` | operator, body `{"group_id":"grp_…"}`. `""` clears the group. |
-| DELETE | `/api/v1/admin/hosts/{id}` | operator |
+| POST | `/api/v1/login` | username and password, sets the session cookie |
+| GET | `/api/v1/me` | signed-in account. Body is `{"id","username","role","created_at"}`. |
+| GET | `/api/v1/hosts` | signed-in account. Body is `{"hosts","groups"}`. Each host has `group_id` (`""` when ungrouped). |
+| GET | `/api/v1/containers?host_id=` | signed-in account |
+| GET | `/api/v1/logs?host_id=&container_id=&stream=&q=&limit=&after_id=&before_id=` | signed-in account |
+| GET | `/api/v1/admin/users` | admin. Body is `{"users":[...]}`. |
+| POST | `/api/v1/admin/users` | admin, body `{"username","password","role"}`, 201. `role` is `user` or `admin`. |
+| PATCH | `/api/v1/admin/users/{id}` | admin, body `{"role"}` and/or `{"password"}` |
+| DELETE | `/api/v1/admin/users/{id}` | admin. Refuses the signed-in account and the last admin. |
+| POST | `/api/v1/admin/groups` | admin, body `{"name"}`, 201 |
+| PATCH | `/api/v1/admin/groups/{id}` | admin, body `{"name"}` |
+| DELETE | `/api/v1/admin/groups/{id}` | admin. Hosts in the group stay, ungrouped. |
+| POST | `/api/v1/admin/hosts/{id}/disable` | admin |
+| POST | `/api/v1/admin/hosts/{id}/enable` | admin |
+| PATCH | `/api/v1/admin/hosts/{id}` | admin, body `{"hostname":"new-name"}` |
+| PATCH | `/api/v1/admin/hosts/{id}/group` | admin, body `{"group_id":"grp_…"}`. `""` clears the group. |
+| DELETE | `/api/v1/admin/hosts/{id}` | admin |
 
 A group name is 1–64 characters, starts with a letter or digit, and then uses letters, digits, spaces, `.`, `_`, or `-`. Names are unique ignoring case.
+
+A username is 1–64 characters, starts with a letter or digit, and then uses letters, digits, `.`, `_`, or `-`. Usernames are unique ignoring case. A password is 8–72 characters. `role` is `user` or `admin`.
 
 A new hostname returns 201. Registering an enabled hostname again returns 200 and a new host token; the previous token stops working. A disabled hostname returns 403. A bad signature returns 401. An ingest batch holds at most 1000 records. The agent sends at most 500. Invalid records in a valid batch are counted in `rejected` and dropped, so one bad line does not block the agent. Unknown host tokens get 401. Disabled hosts get 403.
 
@@ -129,7 +138,8 @@ Server flags override the same `DLOG_` variables.
 | --- | --- | --- |
 | `-addr` | `DLOG_ADDR` | `:8080` |
 | `-data-dir` | `DLOG_DATA_DIR` | `data/server` |
-| `-admin-token` | `DLOG_ADMIN_TOKEN` | generated into `admin.token` |
+| `-admin-user` | `DLOG_ADMIN_USER` | `admin`, used only when creating the first account |
+| `-admin-password` | `DLOG_ADMIN_PASSWORD` | generated into `admin.password` when the database has no accounts |
 | `-agent-cert` | `DLOG_AGENT_CERT` | `agent.crt` in the data directory |
 | `-agent-key` | `DLOG_AGENT_KEY` | `agent.key` in the data directory, written only when the certificate is generated |
 | `-retention` | `DLOG_RETENTION` | `168h` (`7d` is accepted; `0` keeps logs) |

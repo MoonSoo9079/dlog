@@ -68,7 +68,7 @@ func TestAgentShipsLogs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	api := httptest.NewServer(server.New(st, "admin-test-token", key.Certificate(), false, false).Handler())
+	api := httptest.NewServer(server.New(st, key.Certificate(), false, false).Handler())
 	t.Cleanup(api.Close)
 
 	const id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

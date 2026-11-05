@@ -42,6 +42,10 @@ func writeStoreError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "not found")
 	case errors.Is(err, ErrConflict):
 		writeError(w, http.StatusConflict, "already exists")
+	case errors.Is(err, ErrLastAdmin):
+		writeError(w, http.StatusConflict, "cannot remove the last admin")
+	case errors.Is(err, ErrInvalid):
+		writeError(w, http.StatusBadRequest, "invalid account")
 	default:
 		slog.Error("store", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal error")

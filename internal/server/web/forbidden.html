@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admins only · Dlog</title>
+  <link rel="stylesheet" href="/bootstrap.min.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body class="d-flex align-items-center justify-content-center min-vh-100 p-3">
+  <div class="login-card card shadow">
+    <div class="card-body p-4">
+      <div class="brand d-flex align-items-center gap-2 mb-2">
+        <span class="lamp" aria-hidden="true"></span>
+        <span class="h4 mb-0">Dlog</span>
+      </div>
+      <h1 class="h5">Admins only</h1>
+      <p class="text-secondary">This page is for admin accounts. Your account can read logs.</p>
+      <div class="d-flex gap-2">
+        <a class="btn btn-warning" href="/">Back to logs</a>
+        <form method="post" action="/api/v1/logout">
+          <button type="submit" class="btn btn-outline-secondary">Log out</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

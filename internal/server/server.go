@@ -17,7 +17,6 @@ const (
 
 type Server struct {
 	store        *Store
-	admin        string
 	agentCert    *x509.Certificate
 	trustProxy   bool
 	secureCookie bool
@@ -25,10 +24,9 @@ type Server struct {
 	regLimit     *slidingLimit
 }
 
-func New(store *Store, adminToken string, agentCert *x509.Certificate, trustProxy, secureCookie bool) *Server {
+func New(store *Store, agentCert *x509.Certificate, trustProxy, secureCookie bool) *Server {
 	return &Server{
 		store:        store,
-		admin:        adminToken,
 		agentCert:    agentCert,
 		trustProxy:   trustProxy,
 		secureCookie: secureCookie,
@@ -46,11 +44,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/ingest", s.handleIngest)
 	mux.HandleFunc("POST /api/v1/heartbeat", s.handleHeartbeat)
 
-	mux.HandleFunc("GET /api/v1/meta", s.adminJSON(s.handleMeta))
-	mux.HandleFunc("GET /api/v1/hosts", s.adminJSON(s.handleListHosts))
-	mux.HandleFunc("GET /api/v1/containers", s.adminJSON(s.handleContainers))
-	mux.HandleFunc("GET /api/v1/logs", s.adminJSON(s.handleLogs))
+	mux.HandleFunc("GET /api/v1/meta", s.operatorJSON(s.handleMeta))
+	mux.HandleFunc("GET /api/v1/me", s.operatorJSON(s.handleMe))
+	mux.HandleFunc("GET /api/v1/hosts", s.operatorJSON(s.handleListHosts))
+	mux.HandleFunc("GET /api/v1/containers", s.operatorJSON(s.handleContainers))
+	mux.HandleFunc("GET /api/v1/logs", s.operatorJSON(s.handleLogs))
 
+	mux.HandleFunc("GET /api/v1/admin/users", s.adminJSON(s.handleListUsers))
+	mux.HandleFunc("POST /api/v1/admin/users", s.adminJSON(s.handleCreateUser))
+	mux.HandleFunc("PATCH /api/v1/admin/users/{id}", s.adminJSON(s.handleUpdateUser))
+	mux.HandleFunc("DELETE /api/v1/admin/users/{id}", s.adminJSON(s.handleDeleteUser))
 	mux.HandleFunc("POST /api/v1/admin/groups", s.adminJSON(s.handleCreateGroup))
 	mux.HandleFunc("PATCH /api/v1/admin/groups/{id}", s.adminJSON(s.handleRenameGroup))
 	mux.HandleFunc("DELETE /api/v1/admin/groups/{id}", s.adminJSON(s.handleDeleteGroup))
@@ -61,6 +64,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/admin/hosts/{id}", s.adminJSON(s.handleDeleteHost))
 
 	mux.HandleFunc("GET /{$}", s.handleIndex)
+	mux.HandleFunc("GET /admin", s.handleAdmin)
 	mux.HandleFunc("GET /login", s.handleLoginPage)
 	mux.HandleFunc("GET /app.css", s.handleCSS)
 	mux.HandleFunc("GET /app.js", s.handleJS)

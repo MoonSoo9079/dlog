@@ -55,6 +55,10 @@ body {
 
 .login-card { width: min(420px, 100%); }
 
+.admin-wrap { max-width: 920px; }
+
+.account-password { width: 12rem; max-width: 100%; }
+
 .host-pane {
   background: var(--bs-tertiary-bg);
   max-height: 34vh;

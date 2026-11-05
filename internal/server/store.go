@@ -24,6 +24,8 @@ var (
 	ErrConflict     = errors.New("already exists")
 	ErrUnauthorized = errors.New("unauthorized")
 	ErrDisabled     = errors.New("disabled")
+	ErrLastAdmin    = errors.New("last admin")
+	ErrInvalid      = errors.New("invalid")
 )
 
 type Store struct {
@@ -69,6 +71,10 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	if err := migrateHostGroups(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := migrateSessions(db); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -149,8 +155,19 @@ CREATE INDEX IF NOT EXISTS idx_logs_host_id ON logs(host_id, id);
 CREATE INDEX IF NOT EXISTS idx_logs_host_ctr_id ON logs(host_id, container_id, id);
 CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs(ts);
 
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username COLLATE NOCASE);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
   expires_at INTEGER NOT NULL
 );
 `
@@ -188,6 +205,45 @@ func migrateHostGroups(db *sql.DB) error {
 	}
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_hosts_group ON hosts(group_id)`); err != nil {
 		return fmt.Errorf("idx_hosts_group: %w", err)
+	}
+	return nil
+}
+
+// migrateSessions adds sessions.user_id on databases created before accounts.
+// Sessions from the admin-token era have no user, so they are dropped.
+func migrateSessions(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(sessions)`)
+	if err != nil {
+		return err
+	}
+	has := false
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "user_id" {
+			has = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	if !has {
+		if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN user_id TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("sessions.user_id: %w", err)
+		}
+	}
+	if _, err := db.Exec(`DELETE FROM sessions WHERE user_id=''`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`); err != nil {
+		return fmt.Errorf("idx_sessions_user: %w", err)
 	}
 	return nil
 }

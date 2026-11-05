@@ -1,7 +1,7 @@
 # Lab stack. The agent reads every container on the host's Docker daemon,
 # not only the services in this file.
 #   docker compose up --build
-# Then open http://127.0.0.1:8080 and sign in with local-dev-admin-token.
+# Then open http://127.0.0.1:8080 and sign in as admin / local-dev-admin-password.
 services:
   server:
     build:
@@ -12,7 +12,8 @@ services:
     ports:
       - "8080:8080"
     environment:
-      DLOG_ADMIN_TOKEN: local-dev-admin-token
+      DLOG_ADMIN_USER: admin
+      DLOG_ADMIN_PASSWORD: local-dev-admin-password
       DLOG_RETENTION: 168h
       DLOG_DATA_DIR: /var/lib/dlog
       DLOG_AGENT_CERT: /var/lib/dlog-cred/agent.crt

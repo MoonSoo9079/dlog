@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin · Dlog</title>
+  <link rel="stylesheet" href="/bootstrap.min.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body class="d-flex flex-column min-vh-100">
+  <header class="border-bottom px-3 py-2 d-flex align-items-center gap-2">
+    <a class="brand d-flex align-items-center gap-2 fw-semibold text-decoration-none" href="/">
+      <span class="lamp" aria-hidden="true"></span>
+      <span>Dlog</span>
+    </a>
+    <span class="text-secondary">Admin</span>
+    <div class="ms-auto d-flex gap-2">
+      <a class="btn btn-sm btn-outline-light" href="/">Logs</a>
+      <button type="button" id="logout" class="btn btn-sm btn-outline-secondary">Log out</button>
+    </div>
+  </header>
+  <main class="admin-wrap container py-4">
+    <h1 class="h3">Accounts</h1>
+    <p class="text-secondary">Admins manage hosts, groups, and accounts. Users can read logs. A username starts with a letter or digit and may use letters, digits, <span class="font-monospace">.</span>, <span class="font-monospace">_</span>, and <span class="font-monospace">-</span>. A password is 8 to 72 characters.</p>
+    <form id="create-user" class="card mb-4">
+      <div class="card-body">
+        <h2 class="h5">New account</h2>
+        <div class="row g-2 align-items-end">
+          <div class="col-sm">
+            <label class="form-label" for="new-username">Username</label>
+            <input id="new-username" class="form-control" name="username" autocomplete="off" maxlength="64" required>
+          </div>
+          <div class="col-sm">
+            <label class="form-label" for="new-password">Password</label>
+            <input id="new-password" class="form-control" name="password" type="password" autocomplete="new-password" required>
+          </div>
+          <div class="col-sm-3">
+            <label class="form-label" for="new-role">Permission</label>
+            <select id="new-role" class="form-select" name="role">
+              <option value="user" selected>User</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <div class="col-sm-auto">
+            <button type="submit" class="btn btn-warning">Create</button>
+          </div>
+        </div>
+      </div>
+    </form>
+    <div id="accounts" class="list-group"></div>
+  </main>
+  <div class="toast-container position-fixed bottom-0 start-50 translate-middle-x p-3">
+    <div id="toast" class="toast align-items-center text-bg-dark border" role="status" aria-live="polite" aria-atomic="true">
+      <div id="toast-body" class="toast-body"></div>
+    </div>
+  </div>
+  <script src="/bootstrap.bundle.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

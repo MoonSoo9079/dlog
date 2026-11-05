@@ -17,6 +17,9 @@ if (loginError && new URLSearchParams(location.search).get("error")) {
 if (document.getElementById("hosts")) {
   initApp();
 }
+if (document.getElementById("accounts")) {
+  initAccounts();
+}
 
 function initApp() {
   const hostsEl = document.getElementById("hosts");
@@ -88,6 +91,11 @@ function initApp() {
   }).catch(() => {});
   setInterval(() => { if (!document.hidden) refreshHosts(); }, 5000);
   setInterval(() => { if (!document.hidden) pollLogs(); }, 1000);
+  api("/api/v1/me").then((me) => {
+    if (!me || me.role !== "admin") return;
+    document.getElementById("manage").hidden = false;
+    document.getElementById("admin-link").hidden = false;
+  }).catch(() => {});
 
   async function refreshHosts() {
     try {
@@ -642,6 +650,121 @@ function ago(iso) {
   if (s < 3600) return Math.round(s / 60) + "m ago";
   if (s < 86400) return Math.round(s / 3600) + "h ago";
   return Math.round(s / 86400) + "d ago";
+}
+
+function initAccounts() {
+  const listEl = document.getElementById("accounts");
+  const form = document.getElementById("create-user");
+  let me = null;
+
+  document.getElementById("logout").addEventListener("click", async () => {
+    try { await api("/api/v1/logout", { method: "POST", body: "{}" }); } catch (e) { /* redirect anyway */ }
+    location.href = "/login";
+  });
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const username = document.getElementById("new-username").value;
+    const password = document.getElementById("new-password").value;
+    const role = document.getElementById("new-role").value;
+    try {
+      await api("/api/v1/admin/users", { method: "POST", body: JSON.stringify({ username, password, role }) });
+      form.reset();
+      document.getElementById("new-role").value = "user";
+      await load();
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+  load();
+
+  async function load() {
+    try {
+      me = await api("/api/v1/me");
+      const data = await api("/api/v1/admin/users");
+      paint(data.users || []);
+    } catch (err) {
+      if (err.message !== "unauthorized") toast(err.message);
+    }
+  }
+
+  function paint(users) {
+    listEl.replaceChildren();
+    if (!users.length) {
+      listEl.append(el("div", { class: "list-group-item text-secondary" }, ["No accounts."]));
+      return;
+    }
+    for (const u of users) listEl.append(accountRow(u));
+  }
+
+  function accountRow(u) {
+    const role = el("select", { class: "form-select form-select-sm w-auto", "aria-label": "Permission for " + u.username }, [
+      accountOption("user", "User", u.role === "user"),
+      accountOption("admin", "Admin", u.role === "admin"),
+    ]);
+    role.addEventListener("change", () => saveRole(u, role));
+    const password = el("input", {
+      class: "form-control form-control-sm account-password",
+      type: "password",
+      autocomplete: "new-password",
+      placeholder: "New password",
+      "aria-label": "New password for " + u.username,
+    });
+    const setPassword = el("button", { type: "button", class: "btn btn-sm btn-outline-secondary" }, ["Set password"]);
+    setPassword.addEventListener("click", () => savePassword(u, password));
+    const del = el("button", { type: "button", class: "btn btn-sm btn-outline-danger" }, ["Delete"]);
+    if (me && u.id === me.id) del.disabled = true;
+    del.addEventListener("click", () => removeAccount(u));
+    return el("div", { class: "list-group-item d-flex flex-wrap align-items-center gap-2" }, [
+      el("div", { class: "me-auto min-w-0" }, [
+        el("div", { class: "fw-semibold text-truncate" }, [u.username]),
+        el("div", { class: "text-secondary small" }, [u.role === "admin" ? "Admin" : "User"]),
+      ]),
+      role,
+      password,
+      setPassword,
+      del,
+    ]);
+  }
+
+  function accountOption(value, label, selected) {
+    const node = el("option", { value }, [label]);
+    node.selected = selected;
+    return node;
+  }
+
+  async function saveRole(u, select) {
+    try {
+      await api("/api/v1/admin/users/" + encodeURIComponent(u.id), { method: "PATCH", body: JSON.stringify({ role: select.value }) });
+      await load();
+    } catch (err) {
+      toast(err.message);
+      await load();
+    }
+  }
+
+  async function savePassword(u, input) {
+    if (!input.value) {
+      toast("Enter a password");
+      return;
+    }
+    try {
+      await api("/api/v1/admin/users/" + encodeURIComponent(u.id), { method: "PATCH", body: JSON.stringify({ password: input.value }) });
+      input.value = "";
+      toast("Password updated");
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+
+  async function removeAccount(u) {
+    if (!confirm("Delete account " + u.username + "?")) return;
+    try {
+      await api("/api/v1/admin/users/" + encodeURIComponent(u.id), { method: "DELETE" });
+      await load();
+    } catch (err) {
+      toast(err.message);
+    }
+  }
 }
 
 async function api(path, opts = {}) {

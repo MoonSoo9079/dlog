@@ -4,5 +4,6 @@
 *.db-wal
 *.db-shm
 admin.token
+admin.password
 state.json
 agent.key

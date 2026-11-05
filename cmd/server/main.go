@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
@@ -18,14 +20,14 @@ import (
 	"dlog/internal/agentcred"
 	"dlog/internal/cli"
 	"dlog/internal/server"
-	"dlog/internal/token"
 	"dlog/internal/version"
 )
 
 type config struct {
 	Addr          string
 	DataDir       string
-	AdminToken    string
+	AdminUser     string
+	AdminPassword string
 	AgentCert     string
 	AgentKey      string
 	Retention     time.Duration
@@ -63,8 +65,9 @@ func parseConfig(args []string) (config, error) {
 	fs.SetOutput(os.Stderr)
 	cfg := config{Retention: retention}
 	fs.StringVar(&cfg.Addr, "addr", cli.Env("DLOG_ADDR", ":8080"), "listen address")
-	fs.StringVar(&cfg.DataDir, "data-dir", cli.Env("DLOG_DATA_DIR", "data/server"), "directory for the database and generated admin token")
-	fs.StringVar(&cfg.AdminToken, "admin-token", cli.Env("DLOG_ADMIN_TOKEN", ""), "operator token; generated and saved on first run when empty")
+	fs.StringVar(&cfg.DataDir, "data-dir", cli.Env("DLOG_DATA_DIR", "data/server"), "directory for the database and generated files")
+	fs.StringVar(&cfg.AdminUser, "admin-user", cli.Env("DLOG_ADMIN_USER", "admin"), "username of the first admin account, used only when the database has no accounts")
+	fs.StringVar(&cfg.AdminPassword, "admin-password", cli.Env("DLOG_ADMIN_PASSWORD", ""), "password of the first admin account; generated on first start when empty")
 	fs.StringVar(&cfg.AgentCert, "agent-cert", cli.Env("DLOG_AGENT_CERT", ""), "shared agent certificate; generated into the data directory when empty")
 	fs.StringVar(&cfg.AgentKey, "agent-key", cli.Env("DLOG_AGENT_KEY", ""), "where to write the agent private key when generating a certificate")
 	fs.Func("retention", "delete logs older than this duration (0 keeps them; 7d or 168h)", func(s string) error {
@@ -93,16 +96,6 @@ func run(cfg config) error {
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return err
 	}
-	admin, generated, err := resolveAdminToken(cfg.DataDir, cfg.AdminToken)
-	if err != nil {
-		return err
-	}
-	if generated {
-		fmt.Fprintf(os.Stderr, "generated admin token (shown once): %s\nstored in %s\n", admin, filepath.Join(cfg.DataDir, "admin.token"))
-	}
-	if len(admin) < 20 {
-		slog.Warn("admin token is short; use a long random value outside local labs")
-	}
 	certPath := cfg.AgentCert
 	keyPath := cfg.AgentKey
 	if certPath == "" {
@@ -125,6 +118,9 @@ func run(cfg config) error {
 		return err
 	}
 	defer st.Close()
+	if err := ensureAdmin(st, cfg.DataDir, cfg.AdminUser, cfg.AdminPassword); err != nil {
+		return err
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -132,7 +128,7 @@ func run(cfg config) error {
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           server.New(st, admin, agentCert, cfg.TrustProxy, cfg.SecureCookies).Handler(),
+		Handler:           server.New(st, agentCert, cfg.TrustProxy, cfg.SecureCookies).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -190,23 +186,52 @@ func purgeLoop(ctx context.Context, st *server.Store, retention time.Duration) {
 	}
 }
 
-func resolveAdminToken(dir, configured string) (string, bool, error) {
-	if strings.TrimSpace(configured) != "" {
-		return strings.TrimSpace(configured), false, nil
+func ensureAdmin(st *server.Store, dir, username, password string) error {
+	n, err := st.CountUsers()
+	if err != nil {
+		return err
 	}
-	path := filepath.Join(dir, "admin.token")
-	b, err := os.ReadFile(path)
-	if err == nil && strings.TrimSpace(string(b)) != "" {
-		return strings.TrimSpace(string(b)), false, nil
+	if n > 0 {
+		if strings.TrimSpace(password) != "" {
+			slog.Info("accounts already exist; leaving them unchanged")
+		}
+		return nil
 	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", false, err
+	username = strings.TrimSpace(username)
+	if username == "" {
+		username = "admin"
 	}
-	raw := token.New("at_")
-	if err := os.WriteFile(path, []byte(raw+"\n"), 0o600); err != nil {
-		return "", false, err
+	generated := false
+	if strings.TrimSpace(password) == "" {
+		password, err = generatePassword()
+		if err != nil {
+			return err
+		}
+		generated = true
+		path := filepath.Join(dir, "admin.password")
+		if err := os.WriteFile(path, []byte(password+"\n"), 0o600); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "generated admin account %s\npassword (shown once): %s\nstored in %s\n", username, password, path)
 	}
-	return raw, true, nil
+	if _, err := st.CreateUser(username, password, server.RoleAdmin); err != nil {
+		return fmt.Errorf("create admin account: %w", err)
+	}
+	if !generated {
+		slog.Info("created admin account", "username", username)
+	}
+	if len(password) < 20 {
+		slog.Warn("admin password is short; use a long password outside local labs")
+	}
+	return nil
+}
+
+func generatePassword() (string, error) {
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
 func runHealthcheck() int {

@@ -1,16 +1,21 @@
 package server
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
-
-	"dlog/internal/token"
 )
+
+type principalKey struct{}
+
+func principalFrom(r *http.Request) Account {
+	acct, _ := r.Context().Value(principalKey{}).(Account)
+	return acct
+}
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r, s.trustProxy)
@@ -18,17 +23,18 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		s.loginFail(w, r, http.StatusTooManyRequests, "too many attempts")
 		return
 	}
-	raw, jsonReq, err := readToken(w, r)
+	username, password, jsonReq, err := readLogin(w, r)
 	if err != nil {
 		s.loginFail(w, r, http.StatusBadRequest, "bad request")
 		return
 	}
-	if s.admin == "" || !token.Equal(raw, s.admin) {
+	acct, err := s.store.Authenticate(username, password)
+	if err != nil {
 		s.login.hit(ip)
 		s.loginFail(w, r, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	sid, exp, err := s.store.CreateSession(sessionTTL)
+	sid, exp, err := s.store.CreateSession(acct.ID, sessionTTL)
 	if err != nil {
 		slog.Error("create session", "err", err)
 		s.loginFail(w, r, http.StatusInternalServerError, "internal error")
@@ -54,29 +60,47 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-func (s *Server) adminJSON(next http.HandlerFunc) http.HandlerFunc {
+func (s *Server) operatorJSON(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.allowAdmin(w, r) {
+		acct, ok := s.principal(w, r)
+		if !ok {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
-		next(w, r)
+		next(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, acct)))
 	}
 }
 
-func (s *Server) allowAdmin(w http.ResponseWriter, r *http.Request) bool {
-	if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
-		ok, err := s.store.TouchSession(c.Value, sessionTTL)
-		if err == nil && ok {
-			s.setSessionCookie(w, r, c.Value, time.Now().Add(sessionTTL))
-			return true
+func (s *Server) adminJSON(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		acct, ok := s.principal(w, r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
 		}
+		if acct.Role != RoleAdmin {
+			writeError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		next(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, acct)))
 	}
-	got := bearer(r)
-	if got != "" && s.admin != "" && token.Equal(got, s.admin) {
-		return true
+}
+
+func (s *Server) principal(w http.ResponseWriter, r *http.Request) (Account, bool) {
+	c, err := r.Cookie(sessionCookie)
+	if err != nil || c.Value == "" {
+		return Account{}, false
 	}
-	return false
+	acct, ok, err := s.store.TouchSession(c.Value, sessionTTL)
+	if err != nil {
+		slog.Error("session", "err", err)
+		return Account{}, false
+	}
+	if !ok {
+		return Account{}, false
+	}
+	s.setSessionCookie(w, r, c.Value, time.Now().Add(sessionTTL))
+	return acct, true
 }
 
 func (s *Server) hostFromRequest(w http.ResponseWriter, r *http.Request) (Host, bool) {
@@ -113,21 +137,21 @@ func (s *Server) loginFail(w http.ResponseWriter, r *http.Request, status int, m
 	http.Redirect(w, r, "/login?error=1", http.StatusSeeOther)
 }
 
-func readToken(w http.ResponseWriter, r *http.Request) (string, bool, error) {
+func readLogin(w http.ResponseWriter, r *http.Request) (string, string, bool, error) {
 	if strings.Contains(r.Header.Get("Content-Type"), "application/json") {
-		r.Body = http.MaxBytesReader(w, r.Body, 4096)
 		var body struct {
-			Token string `json:"token"`
+			Username string `json:"username"`
+			Password string `json:"password"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			return "", true, err
+		if err := decodeJSON(w, r, &body); err != nil {
+			return "", "", true, err
 		}
-		return strings.TrimSpace(body.Token), true, nil
+		return strings.TrimSpace(body.Username), body.Password, true, nil
 	}
 	if err := r.ParseForm(); err != nil {
-		return "", false, err
+		return "", "", false, err
 	}
-	return strings.TrimSpace(r.FormValue("token")), false, nil
+	return strings.TrimSpace(r.FormValue("username")), r.FormValue("password"), false, nil
 }
 
 type slidingLimit struct {

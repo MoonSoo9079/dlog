@@ -5,19 +5,34 @@ import (
 	"net/http"
 )
 
-//go:embed web/index.html web/login.html web/app.css web/app.js web/bootstrap.min.css web/bootstrap.bundle.min.js
+//go:embed web/index.html web/login.html web/admin.html web/forbidden.html web/app.css web/app.js web/bootstrap.min.css web/bootstrap.bundle.min.js
 var webFS embed.FS
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if !s.allowAdmin(w, r) {
+	if _, ok := s.principal(w, r); !ok {
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
 	serveAsset(w, "web/index.html", "text/html; charset=utf-8")
 }
 
+func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
+	acct, ok := s.principal(w, r)
+	if !ok {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+	if acct.Role != RoleAdmin {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusForbidden)
+		serveAsset(w, "web/forbidden.html", "text/html; charset=utf-8")
+		return
+	}
+	serveAsset(w, "web/admin.html", "text/html; charset=utf-8")
+}
+
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
-	if s.allowAdmin(w, r) {
+	if _, ok := s.principal(w, r); ok {
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
