@@ -1,0 +1,47 @@
+# Server only. Run an agent on each Docker host with deploy/agent-compose.yaml.
+# From the repo root:
+#   docker compose -f deploy/server-compose.yaml up -d --build
+# Leave DLOG_ADMIN_PASSWORD empty to generate the first admin password into the
+# data volume on first start (admin.password). Leave DLOG_AGENT_CERT and
+# DLOG_AGENT_KEY empty to generate the shared agent pair in that same volume.
+# To install your own agent pair or a TLS certificate, mount the files and set
+# those variables to the paths inside the container.
+# DLOG_PUBLISH_PORT is the host port forwarded to container port 8080. It is not
+# read by the server. Leave DLOG_ADDR at :8080 unless you change that mapping.
+# Every DLOG_* variable the server reads is listed below. DLOG_DATA_DIR matches
+# the volume. An empty DLOG_HEALTH_URL probes 127.0.0.1 on the port in DLOG_ADDR.
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: server
+    image: dlog-server:local
+    restart: unless-stopped
+    ports:
+      - "${DLOG_PUBLISH_PORT:-8080}:8080"
+    environment:
+      DLOG_ADDR: "${DLOG_ADDR:-:8080}"
+      DLOG_DATA_DIR: /var/lib/dlog
+      DLOG_ADMIN_USER: ${DLOG_ADMIN_USER:-admin}
+      DLOG_ADMIN_PASSWORD: ${DLOG_ADMIN_PASSWORD:-}
+      DLOG_AGENT_CERT: ${DLOG_AGENT_CERT:-}
+      DLOG_AGENT_KEY: ${DLOG_AGENT_KEY:-}
+      DLOG_RETENTION: ${DLOG_RETENTION:-168h}
+      DLOG_TLS_CERT: ${DLOG_TLS_CERT:-}
+      DLOG_TLS_KEY: ${DLOG_TLS_KEY:-}
+      DLOG_TRUST_PROXY: "${DLOG_TRUST_PROXY:-false}"
+      DLOG_SECURE_COOKIES: "${DLOG_SECURE_COOKIES:-false}"
+      DLOG_LOG_LEVEL: ${DLOG_LOG_LEVEL:-info}
+      DLOG_HEALTH_URL: ${DLOG_HEALTH_URL:-}
+    volumes:
+      - dlog-data:/var/lib/dlog
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/dlog-server", "healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+volumes:
+  dlog-data:

@@ -8,6 +8,13 @@
 #   docker compose -f deploy/agent-compose.yaml up -d --build
 # DLOG_AGENT_CERT_FILE and DLOG_AGENT_KEY_FILE are paths on the host.
 # Inside the container the agent reads DLOG_AGENT_CERT and DLOG_AGENT_KEY.
+# Every DLOG_* variable the agent reads is listed below. Defaults match the process.
+# DLOG_AGENT_CERT, DLOG_AGENT_KEY, and DLOG_STATE_DIR stay on the mounted paths.
+# DLOG_HOSTNAME_FILE is read only when DLOG_HOSTNAME is empty. This file still
+# requires DLOG_HOSTNAME, because a recreated container gets a new hostname.
+# For a private CA, mount the PEM and set DLOG_CA_FILE to that path in the container.
+# For Podman, mount its API socket on /var/run/docker.sock, or set DLOG_DOCKER_HOST
+# to the socket path inside the container and mount that socket there.
 services:
   agent:
     build:
@@ -23,12 +30,21 @@ services:
       - ${DLOG_AGENT_KEY_FILE:?copy agent.key from the server}:/etc/dlog/agent.key:ro
     environment:
       DLOG_SERVER_URL: ${DLOG_SERVER_URL:?set DLOG_SERVER_URL}
-      DLOG_HOSTNAME: ${DLOG_HOSTNAME:?set DLOG_HOSTNAME}
       DLOG_AGENT_CERT: /etc/dlog/agent.crt
       DLOG_AGENT_KEY: /etc/dlog/agent.key
-      DLOG_SINCE: ${DLOG_SINCE:-10m}
+      DLOG_HOSTNAME: ${DLOG_HOSTNAME:?set DLOG_HOSTNAME}
+      DLOG_HOSTNAME_FILE: ${DLOG_HOSTNAME_FILE:-}
       DLOG_STATE_DIR: /var/lib/dlog-agent
+      DLOG_DOCKER_HOST: ${DLOG_DOCKER_HOST:-/var/run/docker.sock}
       DLOG_CA_FILE: ${DLOG_CA_FILE:-}
+      DLOG_SINCE: ${DLOG_SINCE:-10m}
+      DLOG_BATCH: ${DLOG_BATCH:-200}
+      DLOG_FLUSH: ${DLOG_FLUSH:-1s}
+      DLOG_HEARTBEAT: ${DLOG_HEARTBEAT:-15s}
+      DLOG_BUFFER: ${DLOG_BUFFER:-10000}
+      DLOG_INCLUDE_SELF: ${DLOG_INCLUDE_SELF:-false}
+      DLOG_EXCLUDE: ${DLOG_EXCLUDE:-}
+      DLOG_LOG_LEVEL: ${DLOG_LOG_LEVEL:-info}
     labels:
       dlog.exclude: "true"
 

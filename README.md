@@ -70,7 +70,17 @@ docker compose -f deploy/agent-compose.yaml up -d --build
 
 `DLOG_AGENT_CERT_FILE` and `DLOG_AGENT_KEY_FILE` are the certificate files on the host. Compose mounts them into the container. The agent process reads `DLOG_AGENT_CERT` and `DLOG_AGENT_KEY`, which that compose file sets to the mounted paths.
 
-For a private CA, mount the PEM file and set `DLOG_CA_FILE` to that path. Podman works too: point `DLOG_DOCKER_HOST` at the Podman API socket (`unix:///run/podman/podman.sock`, or `$XDG_RUNTIME_DIR/podman/podman.sock` for rootless).
+To run only the server:
+
+```bash
+docker compose -f deploy/server-compose.yaml up -d --build
+```
+
+That file publishes host port 8080 to container port 8080 and stores the database in a volume. Leave `DLOG_ADMIN_PASSWORD` unset to generate the first admin password into that volume. Leave the agent certificate variables unset to generate `agent.crt` and `agent.key` there, then copy both files to each agent host. `DLOG_PUBLISH_PORT` changes the host port. It is not a server setting. Leave `DLOG_ADDR` at `:8080` unless you also change the port mapping.
+
+`deploy/agent-compose.yaml` and `deploy/server-compose.yaml` set every `DLOG_` variable the agent and the server read. An unset variable uses the default written in the file. Paths that follow a volume stay on that mount: the agent state directory, the agent certificate and key, and the server data directory.
+
+For a private CA, mount the PEM file and set `DLOG_CA_FILE` to that path inside the container. Podman works too: mount its API socket on `/var/run/docker.sock`, or point `DLOG_DOCKER_HOST` at the socket path inside the container (`unix:///run/podman/podman.sock`, or `$XDG_RUNTIME_DIR/podman/podman.sock` for rootless) and mount that socket there.
 
 ### Published images
 
@@ -196,6 +206,7 @@ Agent:
 | `-buffer` | `DLOG_BUFFER` | `10000` |
 | `-include-self` | `DLOG_INCLUDE_SELF` | false |
 | `-exclude` | `DLOG_EXCLUDE` | empty |
+| `-log-level` | `DLOG_LOG_LEVEL` | `info` |
 
 Hostnames must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`. Set `DLOG_HOSTNAME` to the node name. The container's own hostname is a poor identity if the container is recreated.
 
@@ -214,7 +225,7 @@ internal/server     store, API, operator console
 internal/agent      Docker log follower and shipper
 internal/agentcred  shared agent certificate
 internal/protocol   JSON contract
-deploy/             images and the agent-only compose file
+deploy/             images and compose files for the server and the agent
 .github/workflows   publish images to ghcr.io
 compose.yaml        local server, agent, and a logger
 ```

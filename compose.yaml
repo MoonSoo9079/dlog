@@ -22,7 +22,7 @@ services:
       - dlog-data:/var/lib/dlog
       - dlog-cred:/var/lib/dlog-cred
     healthcheck:
-      test: ["/usr/local/bin/dlog-server", "healthcheck"]
+      test: ["CMD", "/usr/local/bin/dlog-server", "healthcheck"]
       interval: 5s
       timeout: 3s
       retries: 12
