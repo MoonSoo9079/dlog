@@ -7,11 +7,11 @@
   <link rel="stylesheet" href="/bootstrap.min.css">
   <link rel="stylesheet" href="/app.css">
 </head>
-<body class="d-flex flex-column vh-100">
+<body class="d-flex flex-column vh-100" data-title="Logs">
   <header class="border-bottom px-3 py-2 d-flex flex-wrap align-items-center gap-2 flex-shrink-0">
     <div class="brand d-flex align-items-center gap-2 fw-semibold">
       <span class="lamp" aria-hidden="true"></span>
-      <span>Dlog</span>
+      <span data-brand>Dlog</span>
     </div>
     <div class="top-search">
       <label class="visually-hidden" for="q">Search lines</label>
@@ -22,6 +22,7 @@
       <button type="button" id="follow" class="btn btn-sm btn-warning on" aria-pressed="true">Follow</button>
       <a class="btn btn-sm btn-outline-light" href="/account">Account</a>
       <a id="admin-link" class="btn btn-sm btn-outline-light" href="/admin" hidden>Admin</a>
+      <a id="settings-link" class="btn btn-sm btn-outline-light" href="/admin#settings" hidden>Settings</a>
       <button type="button" id="logout" class="btn btn-sm btn-outline-secondary">Log out</button>
     </div>
   </header>

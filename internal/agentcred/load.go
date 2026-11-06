@@ -71,6 +71,32 @@ func LoadPair(certPath, keyPath string) (tls.Certificate, error) {
 	return pair, nil
 }
 
+// ParsePair reads a PEM certificate and the matching ECDSA P-256 private key.
+func ParsePair(certPEM, keyPEM []byte) (*Key, error) {
+	if len(certPEM) == 0 || len(certPEM) > 1<<16 || len(keyPEM) == 0 || len(keyPEM) > 1<<16 {
+		return nil, errors.New("invalid certificate")
+	}
+	pair, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return nil, err
+	}
+	if len(pair.Certificate) == 0 {
+		return nil, errors.New("agent certificate is empty")
+	}
+	leaf, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		return nil, err
+	}
+	if err := checkCert(leaf); err != nil {
+		return nil, err
+	}
+	priv, ok := pair.PrivateKey.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("agent key must be ECDSA P-256")
+	}
+	return &Key{cert: leaf, priv: priv}, nil
+}
+
 func writeNew(path string, data []byte, mode os.FileMode) error {
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, mode); err != nil {

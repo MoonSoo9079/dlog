@@ -459,3 +459,72 @@ INSERT INTO logs (host_id, container_id, container_name, image, stream, ts, mess
 		t.Fatalf("still two lines: %+v %v", lines, err)
 	}
 }
+
+func TestMigrateUserAccess(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dlog.db")
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path)+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+INSERT INTO users (id, username, password_hash, role, created_at) VALUES ('usr_old', 'ada', 'x', 'user', 1);
+`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	acct, err := s.User("usr_old")
+	if err != nil || !acct.AllHosts || len(acct.GroupIDs) != 0 || acct.Username != "ada" {
+		t.Fatalf("migrated account: %+v %v", acct, err)
+	}
+}
+
+func TestRetentionSeedAndOfflineWindow(t *testing.T) {
+	s := testStore(t)
+	if err := s.SeedRetention(24 * time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if s.Retention() != 24*time.Hour {
+		t.Fatalf("seeded retention: %s", s.Retention())
+	}
+	if err := s.SeedRetention(48 * time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if s.Retention() != 24*time.Hour {
+		t.Fatalf("seed overwrote a saved retention: %s", s.Retention())
+	}
+	host, _, err := s.CreateHost("late")
+	if err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-60 * time.Second).UnixMilli()
+	if _, err := s.db.Exec(`UPDATE hosts SET last_seen_at=?, status=? WHERE id=?`, past, HostEnabled, host.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Host(host.ID)
+	if err != nil || got.Online {
+		t.Fatalf("online inside 45s window: %+v %v", got, err)
+	}
+	cfg := s.settingsSnapshot()
+	cfg.OfflineMS = (2 * time.Minute).Milliseconds()
+	if err := s.SaveSettings(cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.Host(host.ID)
+	if err != nil || !got.Online {
+		t.Fatalf("offline inside 2m window: %+v %v", got, err)
+	}
+}

@@ -24,7 +24,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	if err := agentcred.Verify(s.agentCert, body, r.Header.Get(agentcred.Header)); err != nil {
+	if err := agentcred.Verify(s.certificate(), body, r.Header.Get(agentcred.Header)); err != nil {
 		s.regLimit.hit(ip)
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return

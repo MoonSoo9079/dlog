@@ -19,13 +19,13 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	hosts, groups = visibleFleet(principalFrom(r), hosts, groups)
 	writeJSON(w, http.StatusOK, map[string]any{"hosts": hosts, "groups": groups})
 }
 
 func (s *Server) handleContainers(w http.ResponseWriter, r *http.Request) {
 	hostID := r.URL.Query().Get("host_id")
-	if _, err := s.store.Host(hostID); err != nil {
-		writeStoreError(w, err)
+	if _, ok := s.visibleHost(w, r, hostID); !ok {
 		return
 	}
 	items, err := s.store.Containers(hostID)
@@ -112,4 +112,40 @@ func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Info("host deleted", "id", id)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) visibleHost(w http.ResponseWriter, r *http.Request, hostID string) (Host, bool) {
+	host, err := s.store.Host(hostID)
+	if err != nil {
+		writeStoreError(w, err)
+		return Host{}, false
+	}
+	if !principalFrom(r).SeesHost(host.GroupID) {
+		writeStoreError(w, ErrNotFound)
+		return Host{}, false
+	}
+	return host, true
+}
+
+func visibleFleet(me Account, hosts []Host, groups []Group) ([]Host, []Group) {
+	if me.SeesAll() {
+		return hosts, groups
+	}
+	allow := map[string]bool{}
+	for _, id := range me.GroupIDs {
+		allow[id] = true
+	}
+	keptHosts := []Host{}
+	for _, h := range hosts {
+		if h.GroupID != "" && allow[h.GroupID] {
+			keptHosts = append(keptHosts, h)
+		}
+	}
+	keptGroups := []Group{}
+	for _, g := range groups {
+		if allow[g.ID] {
+			keptGroups = append(keptGroups, g)
+		}
+	}
+	return keptHosts, keptGroups
 }

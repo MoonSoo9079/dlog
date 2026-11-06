@@ -25,19 +25,24 @@ func (s *Store) TouchSession(raw string, ttl time.Duration) (Account, bool, erro
 	now := time.Now()
 	var acct Account
 	var created int64
+	var all int
 	err := s.db.QueryRow(`
-SELECT u.id, u.username, u.role, u.created_at
+SELECT u.id, u.username, u.role, u.all_hosts, u.created_at
 FROM sessions s
 JOIN users u ON u.id = s.user_id
 WHERE s.id_hash=? AND s.expires_at>?`, token.Hash(raw), now.UnixMilli()).
-		Scan(&acct.ID, &acct.Username, &acct.Role, &created)
+		Scan(&acct.ID, &acct.Username, &acct.Role, &all, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Account{}, false, nil
 	}
 	if err != nil {
 		return Account{}, false, err
 	}
+	acct.AllHosts = all != 0
 	acct.CreatedAt = time.UnixMilli(created).UTC()
+	if err := s.fillAccess(&acct); err != nil {
+		return Account{}, false, err
+	}
 	if _, err := s.db.Exec(`UPDATE sessions SET expires_at=? WHERE id_hash=?`, now.Add(ttl).UnixMilli(), token.Hash(raw)); err != nil {
 		return Account{}, false, err
 	}

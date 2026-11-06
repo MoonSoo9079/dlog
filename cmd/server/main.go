@@ -118,17 +118,22 @@ func run(cfg config) error {
 		return err
 	}
 	defer st.Close()
+	if err := st.SeedRetention(cfg.Retention); err != nil {
+		return err
+	}
 	if err := ensureAdmin(st, cfg.DataDir, cfg.AdminUser, cfg.AdminPassword); err != nil {
 		return err
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	go purgeLoop(ctx, st, cfg.Retention)
+	go purgeLoop(ctx, st)
 
+	api := server.New(st, agentCert, cfg.TrustProxy, cfg.SecureCookies)
+	api.SetCertFiles(certPath, keyPath)
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           server.New(st, agentCert, cfg.TrustProxy, cfg.SecureCookies).Handler(),
+		Handler:           api.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -163,7 +168,7 @@ func run(cfg config) error {
 	}
 }
 
-func purgeLoop(ctx context.Context, st *server.Store, retention time.Duration) {
+func purgeLoop(ctx context.Context, st *server.Store) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for {
@@ -171,6 +176,7 @@ func purgeLoop(ctx context.Context, st *server.Store, retention time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			retention := st.Retention()
 			if retention > 0 {
 				n, err := st.PurgeLogs(time.Now().Add(-retention))
 				if err != nil {

@@ -7,16 +7,17 @@
   <link rel="stylesheet" href="/bootstrap.min.css">
   <link rel="stylesheet" href="/app.css">
 </head>
-<body class="d-flex flex-column min-vh-100">
+<body class="d-flex flex-column min-vh-100" data-title="Account">
   <header class="border-bottom px-3 py-2 d-flex align-items-center gap-2">
     <a class="brand d-flex align-items-center gap-2 fw-semibold text-decoration-none" href="/">
       <span class="lamp" aria-hidden="true"></span>
-      <span>Dlog</span>
+      <span data-brand>Dlog</span>
     </a>
     <span class="text-secondary">Account</span>
     <div class="ms-auto d-flex gap-2">
       <a class="btn btn-sm btn-outline-light" href="/">Logs</a>
       <a id="admin-link" class="btn btn-sm btn-outline-light" href="/admin" hidden>Admin</a>
+      <a id="settings-link" class="btn btn-sm btn-outline-light" href="/admin#settings" hidden>Settings</a>
       <button type="button" id="logout" class="btn btn-sm btn-outline-secondary">Log out</button>
     </div>
   </header>

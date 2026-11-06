@@ -67,6 +67,11 @@ func (k *Key) Certificate() *x509.Certificate {
 	return k.cert
 }
 
+// PrivateDER is the SEC 1 encoding of the private key.
+func (k *Key) PrivateDER() ([]byte, error) {
+	return x509.MarshalECPrivateKey(k.priv)
+}
+
 // Pair is the certificate and private key an agent uses to sign requests.
 func (k *Key) Pair() tls.Certificate {
 	return tls.Certificate{

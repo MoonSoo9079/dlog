@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"dlog/internal/protocol"
@@ -20,16 +21,20 @@ const (
 )
 
 var (
-	ErrNotFound     = errors.New("not found")
-	ErrConflict     = errors.New("already exists")
-	ErrUnauthorized = errors.New("unauthorized")
-	ErrDisabled     = errors.New("disabled")
-	ErrLastAdmin    = errors.New("last admin")
-	ErrInvalid      = errors.New("invalid")
+	ErrNotFound           = errors.New("not found")
+	ErrConflict           = errors.New("already exists")
+	ErrUnauthorized       = errors.New("unauthorized")
+	ErrDisabled           = errors.New("disabled")
+	ErrLastAdmin          = errors.New("last admin")
+	ErrInvalid            = errors.New("invalid")
+	ErrRegistrationClosed = errors.New("registration closed")
 )
 
 type Store struct {
-	db *sql.DB
+	db             *sql.DB
+	mu             sync.RWMutex
+	settings       Settings
+	settingsLoaded bool
 }
 
 func Open(path string) (*Store, error) {
@@ -86,7 +91,16 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	if err := migrateAccess(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	st := &Store{db: db}
+	if err := st.loadSettings(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return st, nil
 }
 
 func execPragma(db *sql.DB, q string) error {
@@ -170,15 +184,35 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT NOT NULL,
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL,
+  all_hosts INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username COLLATE NOCASE);
 
+CREATE TABLE IF NOT EXISTS user_groups (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  group_id TEXT NOT NULL REFERENCES host_groups(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, group_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_groups_group ON user_groups(group_id);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id_hash TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   expires_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pending_hosts (
+  hostname TEXT PRIMARY KEY,
+  agent_version TEXT NOT NULL DEFAULT '',
+  requested_at INTEGER NOT NULL
 );
 `
 
@@ -340,6 +374,22 @@ func migrateLogKeys(db *sql.DB) error {
 	}
 	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_logs_line ON logs(host_id, line_key)`); err != nil {
 		return fmt.Errorf("idx_logs_line: %w", err)
+	}
+	return nil
+}
+
+// migrateAccess adds users.all_hosts. Existing accounts see every host.
+// user_groups is created with the schema for both new and old databases.
+func migrateAccess(db *sql.DB) error {
+	has, err := hasColumn(db, "users", "all_hosts")
+	if err != nil {
+		return err
+	}
+	if has {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE users ADD COLUMN all_hosts INTEGER NOT NULL DEFAULT 1`); err != nil {
+		return fmt.Errorf("users.all_hosts: %w", err)
 	}
 	return nil
 }

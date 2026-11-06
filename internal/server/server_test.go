@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -381,7 +382,7 @@ func TestAccounts(t *testing.T) {
 	res = do(t, client, http.MethodGet, ts.URL+"/admin", admin, "")
 	page, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 200 || !strings.Contains(string(page), "New account") || !strings.Contains(string(page), `id="admin-hosts"`) || !strings.Contains(string(page), `id="panel-groups"`) || strings.Contains(string(page), "offcanvas") {
+	if res.StatusCode != 200 || !strings.Contains(string(page), "New account") || !strings.Contains(string(page), `id="admin-hosts"`) || !strings.Contains(string(page), `id="settings-groups"`) || !strings.Contains(string(page), "Save settings") || strings.Contains(string(page), "offcanvas") {
 		t.Fatalf("admin page: %d", res.StatusCode)
 	}
 
@@ -632,6 +633,319 @@ func TestHostDisplayName(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"display_name":""`) {
 		t.Fatalf("clear name: %d %s", res.StatusCode, body)
+	}
+}
+
+func TestUserGroupAccess(t *testing.T) {
+	ts, st, _ := testServer(t)
+	client := noRedirect(t)
+	admin := login(t, client, ts.URL, "admin", testAdminPassword)
+	edge, err := st.CreateGroup("Edge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lab, err := st.CreateGroup("Lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	edgeHost, _, err := st.CreateHost("edge-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	labHost, _, err := st.CreateHost("lab-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loose, _, err := st.CreateHost("loose-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetHostGroup(edgeHost.ID, edge.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetHostGroup(labHost.ID, lab.ID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if _, err := st.Ingest(edgeHost.ID, []protocol.Record{sample(now, "edge-line")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Ingest(labHost.ID, []protocol.Record{sample(now, "lab-line")}); err != nil {
+		t.Fatal(err)
+	}
+
+	res := do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/users", admin, `{"username":"ada","password":"reader-password","role":"user"}`)
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusCreated || !strings.Contains(string(body), `"all_hosts":true`) || !strings.Contains(string(body), `"group_ids":[]`) {
+		t.Fatalf("create: %d %s", res.StatusCode, body)
+	}
+	var ada Account
+	if err := json.Unmarshal(body, &ada); err != nil {
+		t.Fatal(err)
+	}
+	user := login(t, client, ts.URL, "ada", "reader-password")
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/hosts", user, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), "edge-1") || !strings.Contains(string(body), "lab-1") || !strings.Contains(string(body), "loose-1") {
+		t.Fatalf("all hosts: %d %s", res.StatusCode, body)
+	}
+
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/users/"+ada.ID, admin, `{"all_hosts":false,"group_ids":["`+edge.ID+`","`+edge.ID+`"]}`)
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"all_hosts":false`) || !strings.Contains(string(body), edge.ID) {
+		t.Fatalf("scope: %d %s", res.StatusCode, body)
+	}
+	if strings.Count(string(body), edge.ID) != 1 {
+		t.Fatalf("duplicate group stored: %s", body)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/hosts", user, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), "edge-1") || strings.Contains(string(body), "lab-1") || strings.Contains(string(body), "loose-1") || strings.Contains(string(body), "Lab") {
+		t.Fatalf("scoped hosts: %d %s", res.StatusCode, body)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/logs?host_id="+edgeHost.ID, user, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), "edge-line") {
+		t.Fatalf("edge logs: %d %s", res.StatusCode, body)
+	}
+	for _, id := range []string{labHost.ID, loose.ID} {
+		res = do(t, client, http.MethodGet, ts.URL+"/api/v1/logs?host_id="+id, user, "")
+		res.Body.Close()
+		if res.StatusCode != http.StatusNotFound {
+			t.Fatalf("hidden logs %s: %d", id, res.StatusCode)
+		}
+		res = do(t, client, http.MethodGet, ts.URL+"/api/v1/containers?host_id="+id, user, "")
+		res.Body.Close()
+		if res.StatusCode != http.StatusNotFound {
+			t.Fatalf("hidden containers %s: %d", id, res.StatusCode)
+		}
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/hosts", admin, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), "loose-1") || !strings.Contains(string(body), "lab-1") {
+		t.Fatalf("admin still sees all: %d %s", res.StatusCode, body)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/users/"+ada.ID, user, `{"all_hosts":true}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("user sets own scope: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/users/"+ada.ID, admin, `{"group_ids":["grp_missing"]}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing group: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/users/"+ada.ID, admin, `{"all_hosts":false,"group_ids":[]}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("clear groups: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/hosts", user, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"hosts":[]`) || !strings.Contains(string(body), `"groups":[]`) {
+		t.Fatalf("no groups: %d %s", res.StatusCode, body)
+	}
+
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/users/"+ada.ID, admin, `{"all_hosts":false,"group_ids":["`+edge.ID+`"]}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("restore edge: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodDelete, ts.URL+"/api/v1/admin/groups/"+edge.ID, admin, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete group: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/hosts", user, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || strings.Contains(string(body), "edge-1") || strings.Contains(string(body), edge.ID) {
+		t.Fatalf("deleted group still visible: %d %s", res.StatusCode, body)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/users/"+ada.ID, admin, `{"all_hosts":true}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("all hosts again: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/hosts", user, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), "edge-1") || !strings.Contains(string(body), "loose-1") || !strings.Contains(string(body), "lab-1") {
+		t.Fatalf("all hosts after: %d %s", res.StatusCode, body)
+	}
+}
+
+func TestSettingsRegistrationAndCertificate(t *testing.T) {
+	dir := t.TempDir()
+	st := testStore(t)
+	if _, err := st.CreateUser("admin", testAdminPassword, RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateUser("ada", "reader-password", RoleUser); err != nil {
+		t.Fatal(err)
+	}
+	key, err := agentcred.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPath := filepath.Join(dir, "agent.crt")
+	keyPath := filepath.Join(dir, "agent.key")
+	if err := key.Write(certPath, keyPath); err != nil {
+		t.Fatal(err)
+	}
+	api := New(st, key.Certificate(), false, false)
+	api.SetCertFiles(certPath, keyPath)
+	ts := httptest.NewServer(api.Handler())
+	t.Cleanup(ts.Close)
+	client := noRedirect(t)
+	admin := login(t, client, ts.URL, "admin", testAdminPassword)
+	user := login(t, client, ts.URL, "ada", "reader-password")
+
+	res := do(t, client, http.MethodGet, ts.URL+"/api/v1/brand", "", "")
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"name":"Dlog"`) {
+		t.Fatalf("brand: %d %s", res.StatusCode, body)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/admin/settings", user, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("user settings: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/admin", admin, "")
+	page, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(page), "Save settings") || !strings.Contains(string(page), "Automatic registration") || !strings.Contains(string(page), `id="accounts"`) || !strings.Contains(string(page), `id="create-group"`) {
+		t.Fatalf("settings page: %d", res.StatusCode)
+	}
+
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/groups", admin, `{"name":"Edge"}`)
+	gb, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("group: %d %s", res.StatusCode, gb)
+	}
+	var edge Group
+	if err := json.Unmarshal(gb, &edge); err != nil {
+		t.Fatal(err)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/settings", admin, `{"brand_name":"Lab Logs","brand_tagline":"Lab console","auto_register":false,"default_group_id":"`+edge.ID+`","retention":"30d","session":"4h","offline":"2m"}`)
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"brand_name":"Lab Logs"`) || !strings.Contains(string(body), `"auto_register":false`) || !strings.Contains(string(body), edge.ID) {
+		t.Fatalf("save settings: %d %s", res.StatusCode, body)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/brand", "", "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if !strings.Contains(string(body), "Lab Logs") || !strings.Contains(string(body), "Lab console") {
+		t.Fatalf("brand after save: %s", body)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/settings", admin, `{"brand_name":"<script>","session":"1m","retention":"-1h"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid settings: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/settings", admin, `{"default_group_id":"grp_missing"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing default group: %d", res.StatusCode)
+	}
+
+	res = register(t, client, ts.URL, key, "edge-host", time.Now())
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden || !strings.Contains(string(body), "registration closed") {
+		t.Fatalf("closed register: %d %s", res.StatusCode, body)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/admin/settings", admin, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if !strings.Contains(string(body), "edge-host") {
+		t.Fatalf("pending missing: %s", body)
+	}
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/pending/edge-host/approve", admin, "{}")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"group_id":"`+edge.ID+`"`) {
+		t.Fatalf("approve: %d %s", res.StatusCode, body)
+	}
+	res = register(t, client, ts.URL, key, "edge-host", time.Now())
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), "ht_") {
+		t.Fatalf("register after approve: %d %s", res.StatusCode, body)
+	}
+	res = register(t, client, ts.URL, key, "lab-host", time.Now())
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("second new host: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodDelete, ts.URL+"/api/v1/admin/pending/lab-host", admin, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("dismiss: %d", res.StatusCode)
+	}
+
+	res = do(t, client, http.MethodDelete, ts.URL+"/api/v1/admin/groups/"+edge.ID, admin, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete default group: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/admin/settings", admin, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if strings.Contains(string(body), edge.ID) {
+		t.Fatalf("default group remained: %s", body)
+	}
+
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/admin/certificate", admin, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	oldPrint := agentcred.Fingerprint(key.Certificate())
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), oldPrint) || strings.Contains(string(body), "PRIVATE KEY") {
+		t.Fatalf("certificate info: %d %s", res.StatusCode, body)
+	}
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/certificate", admin, `{"action":"generate"}`)
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), "PRIVATE KEY") || strings.Contains(string(body), oldPrint) {
+		t.Fatalf("generate: %d %s", res.StatusCode, body)
+	}
+	var issued struct {
+		Fingerprint string `json:"fingerprint"`
+		CertPEM     string `json:"cert_pem"`
+		KeyPEM      string `json:"key_pem"`
+	}
+	if err := json.Unmarshal(body, &issued); err != nil {
+		t.Fatal(err)
+	}
+	rotated, err := agentcred.ParsePair([]byte(issued.CertPEM), []byte(issued.KeyPEM))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agentcred.Fingerprint(rotated.Certificate()) != issued.Fingerprint {
+		t.Fatalf("fingerprint mismatch")
+	}
+	res = register(t, client, ts.URL, key, "old-cert-host", time.Now())
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("old certificate still trusted: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/settings", admin, `{"auto_register":true}`)
+	res.Body.Close()
+	res = register(t, client, ts.URL, rotated, "new-cert-host", time.Now())
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusCreated || !strings.Contains(string(body), "ht_") {
+		t.Fatalf("new certificate: %d %s", res.StatusCode, body)
 	}
 }
 

@@ -104,14 +104,16 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Role     *string `json:"role"`
-		Password *string `json:"password"`
+		Role     *string   `json:"role"`
+		Password *string   `json:"password"`
+		AllHosts *bool     `json:"all_hosts"`
+		GroupIDs *[]string `json:"group_ids"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, statusForDecode(err), "bad request")
 		return
 	}
-	if body.Role == nil && body.Password == nil {
+	if body.Role == nil && body.Password == nil && body.AllHosts == nil && body.GroupIDs == nil {
 		writeError(w, http.StatusBadRequest, "nothing to change")
 		return
 	}
@@ -136,6 +138,29 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.store.DeleteUserSessions(r.PathValue("id")); err != nil {
+			writeStoreError(w, err)
+			return
+		}
+	}
+	if body.AllHosts != nil || body.GroupIDs != nil {
+		allHosts := false
+		if body.AllHosts != nil {
+			allHosts = *body.AllHosts
+		}
+		var groupIDs []string
+		if body.GroupIDs != nil {
+			groupIDs = *body.GroupIDs
+		}
+		if allHosts {
+			groupIDs = nil
+		}
+		for _, id := range groupIDs {
+			if strings.TrimSpace(id) == "" {
+				writeError(w, http.StatusBadRequest, "invalid group")
+				return
+			}
+		}
+		if err := s.store.SetAccess(r.PathValue("id"), allHosts, groupIDs); err != nil {
 			writeStoreError(w, err)
 			return
 		}

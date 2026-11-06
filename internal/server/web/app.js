@@ -50,6 +50,7 @@ function initApp() {
   let gen = 0;
   let ready = false;
   let polling = false;
+  let viewer = null;
 
   document.getElementById("logout").addEventListener("click", async () => {
     try { await api("/api/v1/logout", { method: "POST", body: "{}" }); } catch (e) { /* redirect anyway */ }
@@ -106,8 +107,9 @@ function initApp() {
   setInterval(() => { if (!document.hidden) refreshHosts(); }, 5000);
   setInterval(() => { if (!document.hidden) pollLogs(); }, 1000);
   api("/api/v1/me").then((me) => {
-    if (!me || me.role !== "admin") return;
-    document.getElementById("admin-link").hidden = false;
+    viewer = me;
+    if (me && me.role === "admin") showAdminLinks();
+    paintHosts();
   }).catch(() => {});
 
   async function refreshHosts() {
@@ -115,10 +117,17 @@ function initApp() {
       const data = await api("/api/v1/hosts");
       hosts = data.hosts || [];
       groups = (data.groups || []).slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id));
-      if (hostId && !hosts.some((h) => h.id === hostId)) hostId = "";
-      if (!hostId && hosts.length) hostId = hosts[0].id;
+      const prevHost = hostId;
+      if (hostId && !hosts.some((h) => h.id === hostId)) {
+        hostId = "";
+        containerId = "";
+      }
+      if (!hostId && hosts.length) {
+        hostId = hosts[0].id;
+        containerId = "";
+      }
       paintHosts();
-      if (hostId && !ready) reload();
+      if (hostId !== prevHost || (hostId && !ready)) reload();
       if (hostId) refreshContainers();
     } catch (e) {
       if (e.message !== "unauthorized") toast(e.message);
@@ -174,8 +183,12 @@ function initApp() {
     } else {
       for (const h of ungrouped) hostsEl.append(hostButton(h));
     }
-    if (!hosts.length) {
-      hostsEl.append(el("p", { class: "text-secondary small px-3 py-2 mb-0" }, ["No hosts yet. Start an agent with the shared certificate and it will register itself."]));
+    if (!hosts.length && !showedGroup) {
+      const scoped = viewer && viewer.role !== "admin" && !viewer.all_hosts;
+      const msg = scoped
+        ? "No hosts in your groups."
+        : "No hosts yet. Start an agent with the shared certificate and it will register itself.";
+      hostsEl.append(el("p", { class: "text-secondary small px-3 py-2 mb-0" }, [msg]));
     } else if (!visible.length && !showedGroup) {
       hostsEl.append(el("p", { class: "text-secondary small px-3 py-2 mb-0" }, ["No matching hosts."]));
     }
@@ -494,17 +507,20 @@ function ago(iso) {
 }
 
 function initAdmin() {
-  const sections = ["hosts", "groups", "accounts"];
   const hostList = document.getElementById("admin-hosts");
   const groupList = document.getElementById("admin-groups");
   const hostQuery = document.getElementById("host-admin-q");
+  const settingsForm = document.getElementById("save-settings");
   let hosts = [];
   let groups = [];
+  let savedSettings = null;
+  let settingsDirty = false;
 
-  for (const id of sections) {
+  for (const id of ["hosts", "settings"]) {
     document.getElementById("nav-" + id).addEventListener("click", () => {
-      if (location.hash === "#" + id) showSection(id);
-      else location.hash = id;
+      const hash = id === "settings" ? "#settings" : "#hosts";
+      if (location.hash === hash) showSection(id);
+      else location.hash = hash.slice(1);
     });
   }
   window.addEventListener("hashchange", () => showSection(sectionFromHash()));
@@ -522,22 +538,72 @@ function initAdmin() {
     }
   });
   hostQuery.addEventListener("input", () => paintHosts());
+  settingsForm.addEventListener("input", () => { settingsDirty = true; });
+  settingsForm.addEventListener("change", () => { settingsDirty = true; });
+  settingsForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const data = await api("/api/v1/admin/settings", {
+        method: "PATCH",
+        body: JSON.stringify({
+          brand_name: document.getElementById("brand-name").value.trim(),
+          brand_tagline: document.getElementById("brand-tagline").value.trim(),
+          auto_register: document.getElementById("auto-register").checked,
+          default_group_id: document.getElementById("default-group").value,
+          retention: document.getElementById("retention").value,
+          session: document.getElementById("session-length").value,
+          offline: document.getElementById("offline-after").value,
+        }),
+      });
+      settingsDirty = false;
+      fillSettings(data);
+      applyBrand();
+      toast("Settings saved");
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+  document.getElementById("generate-cert").addEventListener("click", generateCert);
+  document.getElementById("replace-cert").addEventListener("submit", replaceCert);
   loadFleet(true);
+  loadSettings();
   setInterval(() => { if (!document.hidden) loadFleet(false); }, 5000);
+  setInterval(() => { if (!document.hidden) loadSettings(); }, 5000);
 
   function sectionFromHash() {
     const name = location.hash.replace(/^#/, "");
-    return sections.includes(name) ? name : "hosts";
+    if (name === "hosts") return "hosts";
+    if (["settings", "general", "registration", "certificate", "groups", "accounts"].includes(name)) return "settings";
+    return "hosts";
   }
 
   function showSection(name) {
-    for (const id of sections) {
-      document.getElementById("panel-" + id).hidden = id !== name;
+    document.getElementById("panel-hosts").hidden = name !== "hosts";
+    document.getElementById("panel-settings").hidden = name !== "settings";
+    for (const id of ["hosts", "settings"]) {
       const btn = document.getElementById("nav-" + id);
       btn.classList.toggle("is-active", id === name);
       if (id === name) btn.setAttribute("aria-current", "page");
       else btn.removeAttribute("aria-current");
     }
+    markSettingsNav();
+    if (name !== "settings") return;
+    const hash = location.hash.replace(/^#/, "");
+    const main = document.querySelector(".admin-main");
+    if (hash === "settings" || hash === "general" || hash === "") {
+      if (main) main.scrollTop = 0;
+      return;
+    }
+    const anchor = document.getElementById("settings-" + hash);
+    if (anchor) anchor.scrollIntoView({ block: "start" });
+  }
+
+  function markSettingsNav() {
+    const hash = location.hash.replace(/^#/, "");
+    const current = ["registration", "certificate", "groups", "accounts"].includes(hash) ? hash : "settings";
+    document.querySelectorAll(".settings-jump").forEach((node) => {
+      node.classList.toggle("is-active", node.getAttribute("href") === "#" + current);
+    });
   }
 
   async function loadFleet(force) {
@@ -547,6 +613,10 @@ function initAdmin() {
       groups = (data.groups || []).slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id));
       if (force || !hostList.contains(document.activeElement)) paintHosts();
       if (force || !groupList.contains(document.activeElement)) paintGroups();
+      const groupSelect = document.getElementById("default-group");
+      if (savedSettings && !settingsDirty && document.activeElement !== groupSelect) {
+        paintDefaultGroup(savedSettings.default_group_id || "");
+      }
     } catch (err) {
       if (err.message !== "unauthorized") toast(err.message);
     }
@@ -730,6 +800,139 @@ function initAdmin() {
     if (!confirm("Delete group " + g.name + "? Hosts in it become ungrouped.")) return;
     try {
       await saveChange("/api/v1/admin/groups/" + encodeURIComponent(g.id), { method: "DELETE" });
+      await loadSettings();
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+
+  async function loadSettings() {
+    try {
+      const [data, cert] = await Promise.all([
+        api("/api/v1/admin/settings"),
+        api("/api/v1/admin/certificate"),
+      ]);
+      fillSettings(data);
+      paintCert(cert);
+    } catch (err) {
+      if (err.message !== "unauthorized") toast(err.message);
+    }
+  }
+
+  function fillSettings(data) {
+    savedSettings = data;
+    paintPending(data.pending || []);
+    if (settingsDirty || settingsForm.contains(document.activeElement)) return;
+    document.getElementById("brand-name").value = data.brand_name || "";
+    document.getElementById("brand-tagline").value = data.brand_tagline || "";
+    document.getElementById("auto-register").checked = !!data.auto_register;
+    chooseDuration(document.getElementById("retention"), data.retention_ms);
+    chooseDuration(document.getElementById("session-length"), data.session_ms);
+    chooseDuration(document.getElementById("offline-after"), data.offline_ms);
+    paintDefaultGroup(data.default_group_id || "");
+  }
+
+  function paintDefaultGroup(selected) {
+    const sel = document.getElementById("default-group");
+    if (!sel || document.activeElement === sel) return;
+    sel.replaceChildren(el("option", { value: "" }, ["Ungrouped"]));
+    for (const g of groups) sel.append(el("option", { value: g.id }, [g.name]));
+    const has = [...sel.options].some((opt) => opt.value === selected);
+    sel.value = has ? selected : "";
+  }
+
+  function paintPending(items) {
+    const list = document.getElementById("pending-hosts");
+    if (!list) return;
+    list.replaceChildren();
+    if (!items.length) {
+      list.append(el("div", { class: "list-group-item text-secondary" }, ["No hosts are waiting."]));
+      return;
+    }
+    for (const item of items) {
+      const approve = el("button", { type: "button", class: "btn btn-sm btn-warning" }, ["Approve"]);
+      const dismiss = el("button", { type: "button", class: "btn btn-sm btn-outline-secondary" }, ["Dismiss"]);
+      approve.addEventListener("click", () => decidePending(item.hostname, "approve"));
+      dismiss.addEventListener("click", () => decidePending(item.hostname, "dismiss"));
+      const row = el("div", { class: "list-group-item d-flex flex-wrap align-items-center gap-2" }, [
+        el("div", { class: "me-auto" }, [
+          el("div", { class: "fw-semibold" }, [item.hostname]),
+          el("div", { class: "text-secondary small" }, [item.agent_version ? "agent " + item.agent_version : "agent"]),
+        ]),
+        el("div", { class: "btn-group" }, [approve, dismiss]),
+      ]);
+      list.append(row);
+    }
+  }
+
+  async function decidePending(hostname, action) {
+    try {
+      if (action === "approve") {
+        await api("/api/v1/admin/pending/" + encodeURIComponent(hostname) + "/approve", { method: "POST", body: "{}" });
+      } else {
+        await api("/api/v1/admin/pending/" + encodeURIComponent(hostname), { method: "DELETE" });
+      }
+      await loadSettings();
+      await loadFleet(true);
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+
+  function paintCert(info) {
+    document.getElementById("cert-fingerprint").textContent = info && info.fingerprint ? info.fingerprint : "";
+    const until = info && info.not_after ? new Date(info.not_after) : null;
+    document.getElementById("cert-expiry").textContent = until && !Number.isNaN(until.getTime()) ? "Valid until " + until.toLocaleString() : "";
+    const paths = document.getElementById("cert-paths");
+    paths.textContent = info && info.cert_path ? info.cert_path + "  ·  " + info.key_path : "";
+  }
+
+  async function generateCert() {
+    if (!confirm("Generate a new agent certificate? Agents cannot register until they have the new certificate and key. Hosts that already have a token keep sending logs.")) return;
+    try {
+      const info = await api("/api/v1/admin/certificate", { method: "POST", body: JSON.stringify({ action: "generate" }) });
+      paintCert(info);
+      showIssuedCert(info);
+      toast("New certificate is ready. Download the key before you leave this page.");
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+
+  function showIssuedCert(info) {
+    const once = document.getElementById("cert-once");
+    const certBtn = el("button", { type: "button", class: "btn btn-sm btn-outline-light" }, ["Download certificate"]);
+    const keyBtn = el("button", { type: "button", class: "btn btn-sm btn-warning" }, ["Download private key"]);
+    certBtn.addEventListener("click", () => downloadText("agent.crt", info.cert_pem || ""));
+    keyBtn.addEventListener("click", () => downloadText("agent.key", info.key_pem || ""));
+    once.replaceChildren(
+      el("p", { class: "text-warning small" }, ["Download the private key now. A later visit to this page does not show it again. The same files are stored on the server."]),
+      el("div", { class: "d-flex flex-wrap gap-2" }, [certBtn, keyBtn]),
+    );
+    once.hidden = false;
+  }
+
+  async function replaceCert(e) {
+    e.preventDefault();
+    const certFile = document.getElementById("cert-file").files && document.getElementById("cert-file").files[0];
+    const keyFile = document.getElementById("key-file").files && document.getElementById("key-file").files[0];
+    if (!certFile || !keyFile) {
+      toast("Choose a certificate and a private key");
+      return;
+    }
+    if (!confirm("Replace the agent certificate? Agents cannot register until they have this certificate and key. Hosts that already have a token keep sending logs.")) return;
+    try {
+      const certPEM = await certFile.text();
+      const keyPEM = await keyFile.text();
+      const info = await api("/api/v1/admin/certificate", {
+        method: "POST",
+        body: JSON.stringify({ action: "replace", cert_pem: certPEM, key_pem: keyPEM }),
+      });
+      e.target.reset();
+      document.getElementById("cert-once").hidden = true;
+      document.getElementById("cert-once").replaceChildren();
+      paintCert(info);
+      toast("Certificate replaced. Install it on every agent.");
     } catch (err) {
       toast(err.message);
     }
@@ -744,8 +947,7 @@ function initAccount() {
   api("/api/v1/me").then((me) => {
     const summary = document.getElementById("account-summary");
     if (summary && me) summary.textContent = me.username + " · " + (me.role === "admin" ? "Admin" : "User");
-    const admin = document.getElementById("admin-link");
-    if (admin && me && me.role === "admin") admin.hidden = false;
+    if (me && me.role === "admin") showAdminLinks();
   }).catch(() => {});
   document.getElementById("change-password").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -771,6 +973,7 @@ function initAccounts() {
   const listEl = document.getElementById("accounts");
   const form = document.getElementById("create-user");
   let me = null;
+  let groups = [];
 
   document.getElementById("logout").addEventListener("click", async () => {
     try { await api("/api/v1/logout", { method: "POST", body: "{}" }); } catch (e) { /* redirect anyway */ }
@@ -796,6 +999,8 @@ function initAccounts() {
     try {
       me = await api("/api/v1/me");
       const data = await api("/api/v1/admin/users");
+      const fleet = await api("/api/v1/hosts");
+      groups = (fleet.groups || []).slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id));
       paint(data.users || []);
     } catch (err) {
       if (err.message !== "unauthorized") toast(err.message);
@@ -829,7 +1034,7 @@ function initAccounts() {
     const del = el("button", { type: "button", class: "btn btn-sm btn-outline-danger" }, ["Delete"]);
     if (me && u.id === me.id) del.disabled = true;
     del.addEventListener("click", () => removeAccount(u));
-    return el("div", { class: "list-group-item d-flex flex-wrap align-items-center gap-2" }, [
+    const row = el("div", { class: "list-group-item d-flex flex-wrap align-items-center gap-2" }, [
       el("div", { class: "me-auto min-w-0" }, [
         el("div", { class: "fw-semibold text-truncate" }, [u.username]),
         el("div", { class: "text-secondary small" }, [u.role === "admin" ? "Admin" : "User"]),
@@ -839,6 +1044,60 @@ function initAccounts() {
       setPassword,
       del,
     ]);
+    const access = accessEditor(u);
+    if (access) row.append(access);
+    return row;
+  }
+
+  function accessEditor(u) {
+    if (u.role !== "user") return null;
+    const all = el("input", { class: "form-check-input", type: "checkbox" });
+    all.checked = !!u.all_hosts;
+    const box = el("div", { class: "account-groups" });
+    const selected = new Set(u.group_ids || []);
+    if (!groups.length) {
+      box.append(el("span", { class: "text-secondary small" }, ["No groups yet."]));
+    }
+    for (const g of groups) {
+      const input = el("input", { class: "form-check-input", type: "checkbox", value: g.id });
+      input.checked = selected.has(g.id);
+      box.append(el("label", { class: "form-check form-check-inline mb-0" }, [
+        input,
+        el("span", { class: "form-check-label" }, [g.name]),
+      ]));
+    }
+    const sync = () => { box.hidden = all.checked; };
+    all.addEventListener("change", sync);
+    sync();
+    const save = el("button", { type: "button", class: "btn btn-sm btn-outline-secondary" }, ["Save access"]);
+    save.addEventListener("click", () => saveAccess(u, all, box));
+    return el("div", { class: "w-100 d-flex flex-wrap align-items-center gap-2" }, [
+      el("label", { class: "form-check mb-0" }, [
+        all,
+        el("span", { class: "form-check-label" }, ["All hosts"]),
+      ]),
+      box,
+      save,
+    ]);
+  }
+
+  async function saveAccess(u, all, box) {
+    const groupIDs = [];
+    if (!all.checked) {
+      for (const input of box.querySelectorAll('input[type="checkbox"]')) {
+        if (input.checked && input.value) groupIDs.push(input.value);
+      }
+    }
+    try {
+      await api("/api/v1/admin/users/" + encodeURIComponent(u.id), {
+        method: "PATCH",
+        body: JSON.stringify({ all_hosts: all.checked, group_ids: groupIDs }),
+      });
+      await load();
+    } catch (err) {
+      toast(err.message);
+      await load();
+    }
   }
 
   function accountOption(value, label, selected) {
@@ -906,6 +1165,62 @@ function toast(message) {
   body.textContent = message;
   bootstrap.Toast.getOrCreateInstance(node, { delay: 2400 }).show();
 }
+
+function showAdminLinks() {
+  for (const id of ["admin-link", "settings-link"]) {
+    const node = document.getElementById(id);
+    if (node) node.hidden = false;
+  }
+}
+
+function chooseDuration(select, ms) {
+  if (!select) return;
+  const wanted = durationValue(ms);
+  let found = false;
+  for (const opt of select.options) {
+    if (opt.value === wanted) found = true;
+  }
+  if (!found) select.append(el("option", { value: wanted }, [wanted]));
+  select.value = wanted;
+}
+
+function durationValue(ms) {
+  const n = Number(ms) || 0;
+  if (n === 0) return "0";
+  const sec = Math.round(n / 1000);
+  if (sec % 86400 === 0) return (sec / 86400) + "d";
+  if (sec % 3600 === 0) return (sec / 3600) + "h";
+  if (sec % 60 === 0) return (sec / 60) + "m";
+  return sec + "s";
+}
+
+function downloadText(filename, text) {
+  const blob = new Blob([text], { type: "application/x-pem-file" });
+  const url = URL.createObjectURL(blob);
+  const link = el("a", { href: url, download: filename });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function applyBrand() {
+  const marks = document.querySelectorAll("[data-brand]");
+  const tagline = document.querySelector("[data-tagline]");
+  if (!marks.length && !tagline) return;
+  fetch("/api/v1/brand", { headers: { accept: "application/json" }, credentials: "same-origin" })
+    .then((res) => (res.ok ? res.json() : null))
+    .then((data) => {
+      if (!data || typeof data.name !== "string" || !data.name) return;
+      marks.forEach((node) => { node.textContent = data.name; });
+      const page = document.body && document.body.getAttribute("data-title");
+      document.title = page ? page + " · " + data.name : data.name;
+      if (tagline && typeof data.tagline === "string" && data.tagline) tagline.textContent = data.tagline;
+    })
+    .catch(() => {});
+}
+
+applyBrand();
 
 function el(tag, attrs, children) {
   const node = document.createElement(tag);

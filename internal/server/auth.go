@@ -34,7 +34,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		s.loginFail(w, r, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	sid, exp, err := s.store.CreateSession(acct.ID, sessionTTL)
+	sid, exp, err := s.store.CreateSession(acct.ID, s.sessionLength())
 	if err != nil {
 		slog.Error("create session", "err", err)
 		s.loginFail(w, r, http.StatusInternalServerError, "internal error")
@@ -91,7 +91,7 @@ func (s *Server) principal(w http.ResponseWriter, r *http.Request) (Account, boo
 	if err != nil || c.Value == "" {
 		return Account{}, false
 	}
-	acct, ok, err := s.store.TouchSession(c.Value, sessionTTL)
+	acct, ok, err := s.store.TouchSession(c.Value, s.sessionLength())
 	if err != nil {
 		slog.Error("session", "err", err)
 		return Account{}, false
@@ -99,7 +99,7 @@ func (s *Server) principal(w http.ResponseWriter, r *http.Request) (Account, boo
 	if !ok {
 		return Account{}, false
 	}
-	s.setSessionCookie(w, r, c.Value, time.Now().Add(sessionTTL))
+	s.setSessionCookie(w, r, c.Value, time.Now().Add(s.sessionLength()))
 	return acct, true
 }
 

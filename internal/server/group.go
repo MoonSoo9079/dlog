@@ -60,6 +60,9 @@ func (s *Store) DeleteGroup(id string) error {
 	if _, err := tx.Exec(`UPDATE hosts SET group_id=NULL WHERE group_id=?`, id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`UPDATE settings SET value='' WHERE key='default_group_id' AND value=?`, id); err != nil {
+		return err
+	}
 	res, err := tx.Exec(`DELETE FROM host_groups WHERE id=?`, id)
 	if err != nil {
 		return err
@@ -68,7 +71,15 @@ func (s *Store) DeleteGroup(id string) error {
 	if n == 0 {
 		return ErrNotFound
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	if s.settings.DefaultGroupID == id {
+		s.settings.DefaultGroupID = ""
+	}
+	s.mu.Unlock()
+	return nil
 }
 
 func (s *Store) SetHostGroup(hostID, groupID string) error {

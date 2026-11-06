@@ -50,7 +50,12 @@ VALUES (?, ?, ?, ?, ?, ?, '{}', 0, ?)`,
 
 // Register creates a host or, when the hostname already exists and is enabled,
 // issues a new host token for that host. A disabled host stays disabled.
+// A new hostname is refused when automatic registration is off.
 func (s *Store) Register(hostname, agentVersion string) (Host, string, bool, error) {
+	return s.registerHost(hostname, agentVersion, false)
+}
+
+func (s *Store) registerHost(hostname, agentVersion string, force bool) (Host, string, bool, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return Host{}, "", false, err
@@ -62,15 +67,39 @@ func (s *Store) Register(hostname, agentVersion string) (Host, string, bool, err
 	var id, status string
 	err = tx.QueryRow(`SELECT id, status FROM hosts WHERE hostname=?`, hostname).Scan(&id, &status)
 	if errors.Is(err, sql.ErrNoRows) {
+		if !force && !s.settingsSnapshot().AutoRegister {
+			_, err = tx.Exec(`
+INSERT INTO pending_hosts (hostname, agent_version, requested_at) VALUES (?, ?, ?)
+ON CONFLICT(hostname) DO UPDATE SET agent_version=excluded.agent_version, requested_at=excluded.requested_at`,
+				hostname, clipVersion(agentVersion), now.UnixMilli())
+			if err != nil {
+				return Host{}, "", false, err
+			}
+			if err := tx.Commit(); err != nil {
+				return Host{}, "", false, err
+			}
+			return Host{}, "", false, ErrRegistrationClosed
+		}
+		groupID, err := s.defaultGroupID(tx)
+		if err != nil {
+			return Host{}, "", false, err
+		}
 		id = token.NewID("hst_")
+		var group any
+		if groupID != "" {
+			group = groupID
+		}
 		_, err = tx.Exec(`
-INSERT INTO hosts (id, hostname, token_hash, status, agent_version, docker_version, metadata, dropped, created_at)
-VALUES (?, ?, ?, ?, ?, '', '{}', 0, ?)`,
-			id, hostname, token.Hash(raw), HostEnabled, clipVersion(agentVersion), now.UnixMilli())
+INSERT INTO hosts (id, hostname, token_hash, status, agent_version, docker_version, metadata, dropped, created_at, group_id)
+VALUES (?, ?, ?, ?, ?, '', '{}', 0, ?, ?)`,
+			id, hostname, token.Hash(raw), HostEnabled, clipVersion(agentVersion), now.UnixMilli(), group)
 		if isUnique(err) {
 			return Host{}, "", false, ErrConflict
 		}
 		if err != nil {
+			return Host{}, "", false, err
+		}
+		if _, err := tx.Exec(`DELETE FROM pending_hosts WHERE hostname=?`, hostname); err != nil {
 			return Host{}, "", false, err
 		}
 		if err := tx.Commit(); err != nil {
@@ -88,11 +117,29 @@ VALUES (?, ?, ?, ?, ?, '', '{}', 0, ?)`,
 	if _, err := tx.Exec(`UPDATE hosts SET token_hash=?, agent_version=? WHERE id=?`, token.Hash(raw), clipVersion(agentVersion), id); err != nil {
 		return Host{}, "", false, err
 	}
+	if _, err := tx.Exec(`DELETE FROM pending_hosts WHERE hostname=?`, hostname); err != nil {
+		return Host{}, "", false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return Host{}, "", false, err
 	}
 	host, err := s.Host(id)
 	return host, raw, false, err
+}
+
+func (s *Store) defaultGroupID(tx *sql.Tx) (string, error) {
+	id := s.settingsSnapshot().DefaultGroupID
+	if id == "" {
+		return "", nil
+	}
+	var n int
+	if err := tx.QueryRow(`SELECT COUNT(1) FROM host_groups WHERE id=?`, id).Scan(&n); err != nil {
+		return "", err
+	}
+	if n == 0 {
+		return "", nil
+	}
+	return id, nil
 }
 
 func (s *Store) SetHostStatus(id, status string) error {
@@ -160,7 +207,7 @@ func (s *Store) DeleteHost(id string) error {
 
 func (s *Store) Host(id string) (Host, error) {
 	row := s.db.QueryRow(hostSelect+` WHERE h.id=?`, id)
-	h, err := scanHost(row)
+	h, err := s.scanHostOnline(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Host{}, ErrNotFound
 	}
@@ -175,7 +222,7 @@ func (s *Store) ListHosts() ([]Host, error) {
 	defer rows.Close()
 	var out []Host
 	for rows.Next() {
-		h, err := scanHost(rows)
+		h, err := s.scanHostOnline(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -211,10 +258,19 @@ func scanHost(row rowScanner) (Host, error) {
 		t := time.UnixMilli(seen.Int64).UTC()
 		h.LastSeenAt = &t
 	}
-	h.Online = h.Status == HostEnabled && h.LastSeenAt != nil && time.Since(*h.LastSeenAt) <= OnlineWindow
 	if meta != "" && meta != "{}" {
 		_ = json.Unmarshal([]byte(meta), &h.Metadata)
 	}
+	return h, nil
+}
+
+func (s *Store) scanHostOnline(row rowScanner) (Host, error) {
+	h, err := scanHost(row)
+	if err != nil {
+		return Host{}, err
+	}
+	window := s.settingsSnapshot().Offline()
+	h.Online = h.Status == HostEnabled && h.LastSeenAt != nil && time.Since(*h.LastSeenAt) <= window
 	return h, nil
 }
 
@@ -223,7 +279,7 @@ func (s *Store) AuthenticateHost(raw string) (Host, error) {
 		return Host{}, ErrUnauthorized
 	}
 	row := s.db.QueryRow(hostSelect+` WHERE h.token_hash=?`, token.Hash(raw))
-	h, err := scanHost(row)
+	h, err := s.scanHostOnline(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Host{}, ErrUnauthorized
 	}

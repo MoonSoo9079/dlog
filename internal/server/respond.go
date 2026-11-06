@@ -38,6 +38,8 @@ func writeStoreError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 	case errors.Is(err, ErrDisabled):
 		writeError(w, http.StatusForbidden, "host disabled")
+	case errors.Is(err, ErrRegistrationClosed):
+		writeError(w, http.StatusForbidden, "registration closed")
 	case errors.Is(err, ErrNotFound):
 		writeError(w, http.StatusNotFound, "not found")
 	case errors.Is(err, ErrConflict):

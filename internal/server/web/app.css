@@ -98,6 +98,32 @@ body {
 
 .account-panel { max-width: 32rem; }
 
+.account-groups { display: flex; flex-wrap: wrap; gap: 0.35rem 0.9rem; }
+
+.settings-subnav { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 1.25rem; }
+
+.settings-jump {
+  display: inline-block;
+  border-radius: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  color: var(--bs-secondary-color);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.settings-jump:hover,
+.settings-jump:focus-visible { color: var(--bs-emphasis-color); }
+
+.settings-jump.is-active {
+  background: #241c10;
+  color: var(--bs-emphasis-color);
+}
+
+.settings-section { scroll-margin-top: 1rem; }
+
+.cert-fp { word-break: break-all; }
+
 .since-input,
 .admin-display-name { width: 16rem; max-width: 100%; }
 

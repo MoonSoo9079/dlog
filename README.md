@@ -19,12 +19,12 @@ On first registration the server gives the agent a host token. The agent stores 
 | Autoregistration | `POST /api/v1/register`, signed with that key |
 | Active checks | The agent pushes batches. Nothing on the host accepts connections |
 | Enable or disable a host | `enabled` or `disabled`. A disabled host is rejected with HTTP 403 |
-| Availability | Heartbeat every 15 seconds. The console marks a host online when `last_seen` is within 45 seconds |
+| Availability | Heartbeat every 15 seconds. The console marks a host online when it was seen within the offline window, 45 seconds unless Settings changes it |
 | `TLSCAFile` | `DLOG_CA_FILE`, a PEM bundle the agent uses to verify the server |
 
 The private key on an agent can register any hostname and can take over an enabled hostname. Protect `agent.key`. Put TLS on the server (`-tls-cert` and `-tls-key`, or a reverse proxy) so a captured registration cannot be replayed after it expires. A registration timestamp is accepted for five minutes.
 
-The first time the server starts without a certificate, it writes `agent.crt` and `agent.key` into the data directory and logs a warning. To replace the certificate, put a new ECDSA P-256 pair in those paths and restart the server, then install the same files on the agents.
+The first time the server starts without a certificate, it writes `agent.crt` and `agent.key` into the data directory and logs a warning. Settings can generate a new pair or replace the one the server trusts, and that takes effect without a restart. You can also put a new ECDSA P-256 pair in those paths and restart the server. Either way, install the same files on the agents. Hosts that already have a token keep sending logs.
 
 ## Quick start
 
@@ -96,29 +96,31 @@ The console is served by `dlog-server`.
 - A host row shows how many lines the agent has dropped when that count is not zero.
 - Account opens a page where the signed-in user changes their own password. The current password is required. This browser stays signed in. Sign out other sessions ends every other session for that account.
 - The host list on the left is for reading logs. Hosts appear there after an agent registers. A display name, when set, is the name on that row. The hostname stays underneath it.
-- Admin opens a page for hosts, groups, and accounts. There you set a display name, move a host into one group, disable, enable, or delete a host, and create, rename, or delete groups. You also create accounts and set each one to User or Admin. Setting an account's password signs that account out. Users can read logs. Admins can manage hosts, groups, and accounts. An admin cannot delete the signed-in account or remove the last admin.
+- Admin opens a page for hosts. There you set a display name, move a host into one group, and disable, enable, or delete a host.
+- Settings is where an admin changes the server name and the sign-in tagline, turns automatic registration on or off, picks the group new hosts join, and approves a host that registered while that was off. It also keeps the agent certificate, how long logs are stored, how long a session lasts, and how soon a quiet host looks offline. Groups and accounts are on that page too. You create, rename, or delete groups, and you create accounts and set each one to User or Admin. A user sees every host, or only the groups you tick. Hosts with no group stay visible to admins and to users who can see all hosts. Deleting a group removes it from those users, and the hosts in it leave their view. Setting an account's password signs that account out. Users can read logs. Admins can manage hosts, groups, accounts, and settings. An admin cannot delete the signed-in account or remove the last admin.
 
 Deleting a host deletes its stored logs. The agent will register that hostname again if it still has the certificate and the host was not left disabled. Disable a host to refuse it.
 
 ## HTTP API
 
-`POST /api/v1/register` is signed with the agent private key. The signature is the `X-Dlog-Signature` header, base64url of the ECDSA signature over the SHA-256 of the raw JSON body. The body is `{"hostname","agent_version","timestamp"}`. Ingest and heartbeat then send `Authorization: Bearer <host token>`, the token the agent saved at registration. Operator routes use the `dlog_session` cookie from `POST /api/v1/login`. A user account can read. An admin account can also change hosts, groups, and accounts.
+`POST /api/v1/register` is signed with the agent private key. The signature is the `X-Dlog-Signature` header, base64url of the ECDSA signature over the SHA-256 of the raw JSON body. The body is `{"hostname","agent_version","timestamp"}`. Ingest and heartbeat then send `Authorization: Bearer <host token>`, the token the agent saved at registration. Operator routes use the `dlog_session` cookie from `POST /api/v1/login`. A user account can read. An admin account can also change hosts, groups, accounts, and settings.
 
 | Method | Path | Who |
 | --- | --- | --- |
 | GET | `/api/v1/health` | public |
+| GET | `/api/v1/brand` | public. Body is `{"name","tagline"}`. `name` is `Dlog` when the setting is blank. |
 | POST | `/api/v1/register` | agent certificate |
 | POST | `/api/v1/ingest` | host token |
 | POST | `/api/v1/heartbeat` | host token |
 | POST | `/api/v1/login` | username and password, sets the session cookie |
-| GET | `/api/v1/me` | signed-in account. Body is `{"id","username","role","created_at"}`. |
+| GET | `/api/v1/me` | signed-in account. Body is `{"id","username","role","all_hosts","group_ids","created_at"}`. |
 | PATCH | `/api/v1/me` | signed-in account, body `{"current_password","password","sign_out_others"}`. Changes that account's password. `sign_out_others` ends every other session. A wrong current password is 400. |
-| GET | `/api/v1/hosts` | signed-in account. Body is `{"hosts","groups"}`. Each host has `group_id` (`""` when ungrouped), `display_name` (`""` when unset), and `dropped`. |
-| GET | `/api/v1/containers?host_id=` | signed-in account |
-| GET | `/api/v1/logs?host_id=&container_id=&stream=&q=&limit=&after_id=&before_id=&since=&until=` | signed-in account. `since` and `until` are RFC3339. |
+| GET | `/api/v1/hosts` | signed-in account. Body is `{"hosts","groups"}`. A user with `all_hosts` sees every host. A user limited to groups sees only those groups and the hosts in them. Each host has `group_id` (`""` when ungrouped), `display_name` (`""` when unset), and `dropped`. |
+| GET | `/api/v1/containers?host_id=` | signed-in account. A host outside the account is 404. |
+| GET | `/api/v1/logs?host_id=&container_id=&stream=&q=&limit=&after_id=&before_id=&since=&until=` | signed-in account. `since` and `until` are RFC3339. A host outside the account is 404. |
 | GET | `/api/v1/admin/users` | admin. Body is `{"users":[...]}`. |
 | POST | `/api/v1/admin/users` | admin, body `{"username","password","role"}`, 201. `role` is `user` or `admin`. |
-| PATCH | `/api/v1/admin/users/{id}` | admin, body `{"role"}` and/or `{"password"}`. A new password signs that account out. |
+| PATCH | `/api/v1/admin/users/{id}` | admin, body `{"role"}` and/or `{"password"}` and/or `{"all_hosts","group_ids"}`. A new password signs that account out. `all_hosts` true sees every host and clears `group_ids`. `all_hosts` false sees only those groups. An empty `group_ids` sees no hosts. |
 | DELETE | `/api/v1/admin/users/{id}` | admin. Refuses the signed-in account and the last admin. |
 | POST | `/api/v1/admin/groups` | admin, body `{"name"}`, 201 |
 | PATCH | `/api/v1/admin/groups/{id}` | admin, body `{"name"}` |
@@ -128,6 +130,13 @@ Deleting a host deletes its stored logs. The agent will register that hostname a
 | PATCH | `/api/v1/admin/hosts/{id}` | admin, body `{"display_name":"Web 01"}` and/or `{"hostname":"new-name"}`. `display_name` of `""` clears it. The hostname is the registration name. Changing it makes the next registration of the old name create another host. |
 | PATCH | `/api/v1/admin/hosts/{id}/group` | admin, body `{"group_id":"grp_…"}`. `""` clears the group. |
 | DELETE | `/api/v1/admin/hosts/{id}` | admin |
+| GET | `/api/v1/admin/settings` | admin. Body is the saved settings plus `pending`, the hostnames waiting for approval. |
+| PATCH | `/api/v1/admin/settings` | admin. Any of `brand_name`, `brand_tagline`, `auto_register`, `default_group_id`, `retention`, `session`, `offline`. `brand_name` of `""` uses Dlog. `default_group_id` of `""` leaves new hosts ungrouped. `retention` of `0` keeps logs. `retention`, `session`, and `offline` use the same duration text as the flags (`7d`, `12h`, `45s`). A session is from 1 hour to 30 days. The offline window is from 30 seconds to 15 minutes. |
+| POST | `/api/v1/admin/pending/{hostname}/approve` | admin. Creates the host in the default group. The agent gets a token on its next registration. |
+| DELETE | `/api/v1/admin/pending/{hostname}` | admin. Drops a waiting registration. |
+| GET | `/api/v1/admin/certificate` | admin. Fingerprint, subject, validity, and the file paths. The private key is not included. |
+| GET | `/api/v1/admin/certificate.pem` | admin. Downloads the public certificate. |
+| POST | `/api/v1/admin/certificate` | admin. `{"action":"generate"}` writes a new pair and returns the private key once. `{"action":"replace","cert_pem","key_pem"}` installs an ECDSA P-256 pair. |
 
 A group name is 1–64 characters, starts with a letter or digit, and then uses letters, digits, spaces, `.`, `_`, or `-`. Names are unique ignoring case.
 
@@ -147,7 +156,7 @@ Server flags override the same `DLOG_` variables.
 | `-admin-password` | `DLOG_ADMIN_PASSWORD` | generated into `admin.password` when the database has no accounts |
 | `-agent-cert` | `DLOG_AGENT_CERT` | `agent.crt` in the data directory |
 | `-agent-key` | `DLOG_AGENT_KEY` | `agent.key` in the data directory, written only when the certificate is generated |
-| `-retention` | `DLOG_RETENTION` | `168h` (`7d` is accepted; `0` keeps logs) |
+| `-retention` | `DLOG_RETENTION` | `168h` (`7d` is accepted; `0` keeps logs). Used only until Settings saves a retention. The saved value is what later starts use. |
 | `-tls-cert` / `-tls-key` | `DLOG_TLS_CERT` / `DLOG_TLS_KEY` | empty |
 | `-trust-proxy` | `DLOG_TRUST_PROXY` | false |
 | `-secure-cookies` | `DLOG_SECURE_COOKIES` | false |
@@ -181,7 +190,7 @@ Hostnames must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`. Set `DLOG_HOSTNAME` t
 
 Logs sit in one SQLite database, `dlog.db`, in the server data directory, with WAL mode when the filesystem allows it. That is enough for a homelab or a small fleet. It is not a multi-node log cluster. Put the data directory on a local disk.
 
-A janitor runs once a minute and deletes lines older than the retention window. Operators query through indexes on host and container. A leading-wildcard `LIKE` search is fine at this size and will get slower as the table grows.
+A janitor runs once a minute and deletes lines older than the retention window from Settings. Operators query through indexes on host and container. A leading-wildcard `LIKE` search is fine at this size and will get slower as the table grows.
 
 ## Layout
 

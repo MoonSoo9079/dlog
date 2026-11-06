@@ -10,8 +10,7 @@ import (
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	hostID := q.Get("host_id")
-	if _, err := s.store.Host(hostID); err != nil {
-		writeStoreError(w, err)
+	if _, ok := s.visibleHost(w, r, hostID); !ok {
 		return
 	}
 	f := LogFilter{

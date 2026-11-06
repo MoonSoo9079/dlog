@@ -7,14 +7,14 @@
   <link rel="stylesheet" href="/bootstrap.min.css">
   <link rel="stylesheet" href="/app.css">
 </head>
-<body class="d-flex align-items-center justify-content-center min-vh-100 p-3">
+<body class="d-flex align-items-center justify-content-center min-vh-100 p-3" data-title="Sign in">
   <form class="login-card card shadow" method="post" action="/api/v1/login">
     <div class="card-body p-4">
       <div class="brand d-flex align-items-center gap-2 mb-2">
         <span class="lamp" aria-hidden="true"></span>
-        <span class="h4 mb-0">Dlog</span>
+        <span class="h4 mb-0" data-brand>Dlog</span>
       </div>
-      <p class="text-secondary">Operator console. Agents register with the shared certificate.</p>
+      <p id="login-tagline" class="text-secondary" data-tagline>Operator console. Agents register with the shared certificate.</p>
       <label class="form-label" for="username">Username</label>
       <input id="username" name="username" class="form-control" type="text" autocomplete="username" required autofocus>
       <label class="form-label mt-3" for="password">Password</label>

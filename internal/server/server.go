@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"net/http"
+	"sync"
 	"time"
 
 	"dlog/internal/version"
@@ -11,13 +12,15 @@ import (
 
 const (
 	sessionCookie = "dlog_session"
-	sessionTTL    = 12 * time.Hour
 	maxBody       = 4 << 20
 )
 
 type Server struct {
 	store        *Store
+	certMu       sync.RWMutex
 	agentCert    *x509.Certificate
+	certPath     string
+	keyPath      string
 	trustProxy   bool
 	secureCookie bool
 	login        *slidingLimit
@@ -38,6 +41,7 @@ func New(store *Store, agentCert *x509.Certificate, trustProxy, secureCookie boo
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
+	mux.HandleFunc("GET /api/v1/brand", s.handleBrand)
 	mux.HandleFunc("POST /api/v1/login", s.handleLogin)
 	mux.HandleFunc("POST /api/v1/logout", s.handleLogout)
 	mux.HandleFunc("POST /api/v1/register", s.handleRegister)
@@ -63,6 +67,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/admin/hosts/{id}/disable", s.adminJSON(s.handleDisableHost))
 	mux.HandleFunc("POST /api/v1/admin/hosts/{id}/enable", s.adminJSON(s.handleEnableHost))
 	mux.HandleFunc("DELETE /api/v1/admin/hosts/{id}", s.adminJSON(s.handleDeleteHost))
+	mux.HandleFunc("GET /api/v1/admin/settings", s.adminJSON(s.handleGetSettings))
+	mux.HandleFunc("PATCH /api/v1/admin/settings", s.adminJSON(s.handleUpdateSettings))
+	mux.HandleFunc("POST /api/v1/admin/pending/{hostname}/approve", s.adminJSON(s.handleApprovePending))
+	mux.HandleFunc("DELETE /api/v1/admin/pending/{hostname}", s.adminJSON(s.handleDismissPending))
+	mux.HandleFunc("GET /api/v1/admin/certificate", s.adminJSON(s.handleCertificate))
+	mux.HandleFunc("GET /api/v1/admin/certificate.pem", s.adminJSON(s.handleCertificatePEM))
+	mux.HandleFunc("POST /api/v1/admin/certificate", s.adminJSON(s.handleReplaceCertificate))
 
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /admin", s.handleAdmin)
@@ -76,6 +87,36 @@ func (s *Server) Handler() http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	return securityHeaders(mux)
+}
+
+// SetCertFiles records where a replaced agent certificate is written.
+func (s *Server) SetCertFiles(certPath, keyPath string) {
+	s.certMu.Lock()
+	s.certPath = certPath
+	s.keyPath = keyPath
+	s.certMu.Unlock()
+}
+
+func (s *Server) certificate() *x509.Certificate {
+	s.certMu.RLock()
+	defer s.certMu.RUnlock()
+	return s.agentCert
+}
+
+func (s *Server) setCertificate(cert *x509.Certificate) {
+	s.certMu.Lock()
+	s.agentCert = cert
+	s.certMu.Unlock()
+}
+
+func (s *Server) certFiles() (string, string) {
+	s.certMu.RLock()
+	defer s.certMu.RUnlock()
+	return s.certPath, s.keyPath
+}
+
+func (s *Server) sessionLength() time.Duration {
+	return s.store.settingsSnapshot().Session()
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
