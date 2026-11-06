@@ -510,17 +510,19 @@ function initAdmin() {
   const hostList = document.getElementById("admin-hosts");
   const groupList = document.getElementById("admin-groups");
   const hostQuery = document.getElementById("host-admin-q");
-  const settingsForm = document.getElementById("save-settings");
+  const generalForm = document.getElementById("save-general");
+  const registrationForm = document.getElementById("save-registration");
+  const sections = ["hosts", "general", "registration", "certificate", "groups", "accounts"];
   let hosts = [];
   let groups = [];
   let savedSettings = null;
-  let settingsDirty = false;
+  let generalDirty = false;
+  let registrationDirty = false;
 
-  for (const id of ["hosts", "settings"]) {
+  for (const id of sections) {
     document.getElementById("nav-" + id).addEventListener("click", () => {
-      const hash = id === "settings" ? "#settings" : "#hosts";
-      if (location.hash === hash) showSection(id);
-      else location.hash = hash.slice(1);
+      if (location.hash === "#" + id) showSection(id);
+      else location.hash = id;
     });
   }
   window.addEventListener("hashchange", () => showSection(sectionFromHash()));
@@ -538,9 +540,9 @@ function initAdmin() {
     }
   });
   hostQuery.addEventListener("input", () => paintHosts());
-  settingsForm.addEventListener("input", () => { settingsDirty = true; });
-  settingsForm.addEventListener("change", () => { settingsDirty = true; });
-  settingsForm.addEventListener("submit", async (e) => {
+  generalForm.addEventListener("input", () => { generalDirty = true; });
+  generalForm.addEventListener("change", () => { generalDirty = true; });
+  generalForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
       const data = await api("/api/v1/admin/settings", {
@@ -548,16 +550,33 @@ function initAdmin() {
         body: JSON.stringify({
           brand_name: document.getElementById("brand-name").value.trim(),
           brand_tagline: document.getElementById("brand-tagline").value.trim(),
-          auto_register: document.getElementById("auto-register").checked,
-          default_group_id: document.getElementById("default-group").value,
           retention: document.getElementById("retention").value,
           session: document.getElementById("session-length").value,
           offline: document.getElementById("offline-after").value,
         }),
       });
-      settingsDirty = false;
+      generalDirty = false;
       fillSettings(data);
       applyBrand();
+      toast("Settings saved");
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+  registrationForm.addEventListener("input", () => { registrationDirty = true; });
+  registrationForm.addEventListener("change", () => { registrationDirty = true; });
+  registrationForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const data = await api("/api/v1/admin/settings", {
+        method: "PATCH",
+        body: JSON.stringify({
+          auto_register: document.getElementById("auto-register").checked,
+          default_group_id: document.getElementById("default-group").value,
+        }),
+      });
+      registrationDirty = false;
+      fillSettings(data);
       toast("Settings saved");
     } catch (err) {
       toast(err.message);
@@ -572,38 +591,21 @@ function initAdmin() {
 
   function sectionFromHash() {
     const name = location.hash.replace(/^#/, "");
-    if (name === "hosts") return "hosts";
-    if (["settings", "general", "registration", "certificate", "groups", "accounts"].includes(name)) return "settings";
+    if (name === "settings" || name === "general") return "general";
+    if (sections.includes(name)) return name;
     return "hosts";
   }
 
   function showSection(name) {
-    document.getElementById("panel-hosts").hidden = name !== "hosts";
-    document.getElementById("panel-settings").hidden = name !== "settings";
-    for (const id of ["hosts", "settings"]) {
+    for (const id of sections) {
+      document.getElementById("panel-" + id).hidden = id !== name;
       const btn = document.getElementById("nav-" + id);
       btn.classList.toggle("is-active", id === name);
       if (id === name) btn.setAttribute("aria-current", "page");
       else btn.removeAttribute("aria-current");
     }
-    markSettingsNav();
-    if (name !== "settings") return;
-    const hash = location.hash.replace(/^#/, "");
     const main = document.querySelector(".admin-main");
-    if (hash === "settings" || hash === "general" || hash === "") {
-      if (main) main.scrollTop = 0;
-      return;
-    }
-    const anchor = document.getElementById("settings-" + hash);
-    if (anchor) anchor.scrollIntoView({ block: "start" });
-  }
-
-  function markSettingsNav() {
-    const hash = location.hash.replace(/^#/, "");
-    const current = ["registration", "certificate", "groups", "accounts"].includes(hash) ? hash : "settings";
-    document.querySelectorAll(".settings-jump").forEach((node) => {
-      node.classList.toggle("is-active", node.getAttribute("href") === "#" + current);
-    });
+    if (main) main.scrollTop = 0;
   }
 
   async function loadFleet(force) {
@@ -614,7 +616,7 @@ function initAdmin() {
       if (force || !hostList.contains(document.activeElement)) paintHosts();
       if (force || !groupList.contains(document.activeElement)) paintGroups();
       const groupSelect = document.getElementById("default-group");
-      if (savedSettings && !settingsDirty && document.activeElement !== groupSelect) {
+      if (savedSettings && !registrationDirty && document.activeElement !== groupSelect) {
         paintDefaultGroup(savedSettings.default_group_id || "");
       }
     } catch (err) {
@@ -822,14 +824,17 @@ function initAdmin() {
   function fillSettings(data) {
     savedSettings = data;
     paintPending(data.pending || []);
-    if (settingsDirty || settingsForm.contains(document.activeElement)) return;
-    document.getElementById("brand-name").value = data.brand_name || "";
-    document.getElementById("brand-tagline").value = data.brand_tagline || "";
-    document.getElementById("auto-register").checked = !!data.auto_register;
-    chooseDuration(document.getElementById("retention"), data.retention_ms);
-    chooseDuration(document.getElementById("session-length"), data.session_ms);
-    chooseDuration(document.getElementById("offline-after"), data.offline_ms);
-    paintDefaultGroup(data.default_group_id || "");
+    if (!generalDirty && !generalForm.contains(document.activeElement)) {
+      document.getElementById("brand-name").value = data.brand_name || "";
+      document.getElementById("brand-tagline").value = data.brand_tagline || "";
+      chooseDuration(document.getElementById("retention"), data.retention_ms);
+      chooseDuration(document.getElementById("session-length"), data.session_ms);
+      chooseDuration(document.getElementById("offline-after"), data.offline_ms);
+    }
+    if (!registrationDirty && !registrationForm.contains(document.activeElement)) {
+      document.getElementById("auto-register").checked = !!data.auto_register;
+      paintDefaultGroup(data.default_group_id || "");
+    }
   }
 
   function paintDefaultGroup(selected) {

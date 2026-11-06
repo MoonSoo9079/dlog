@@ -382,7 +382,7 @@ func TestAccounts(t *testing.T) {
 	res = do(t, client, http.MethodGet, ts.URL+"/admin", admin, "")
 	page, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 200 || !strings.Contains(string(page), "New account") || !strings.Contains(string(page), `id="admin-hosts"`) || !strings.Contains(string(page), `id="settings-groups"`) || !strings.Contains(string(page), "Save settings") || strings.Contains(string(page), "offcanvas") {
+	if res.StatusCode != 200 || !strings.Contains(string(page), "New account") || !strings.Contains(string(page), `id="admin-hosts"`) || !strings.Contains(string(page), `id="panel-groups"`) || !strings.Contains(string(page), `id="panel-accounts"`) || strings.Contains(string(page), "offcanvas") {
 		t.Fatalf("admin page: %d", res.StatusCode)
 	}
 
@@ -822,7 +822,7 @@ func TestSettingsRegistrationAndCertificate(t *testing.T) {
 	res = do(t, client, http.MethodGet, ts.URL+"/admin", admin, "")
 	page, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != http.StatusOK || !strings.Contains(string(page), "Save settings") || !strings.Contains(string(page), "Automatic registration") || !strings.Contains(string(page), `id="accounts"`) || !strings.Contains(string(page), `id="create-group"`) {
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(page), "Automatic registration") || !strings.Contains(string(page), `id="panel-registration"`) || !strings.Contains(string(page), `id="panel-certificate"`) || !strings.Contains(string(page), `id="accounts"`) || !strings.Contains(string(page), `id="create-group"`) {
 		t.Fatalf("settings page: %d", res.StatusCode)
 	}
 

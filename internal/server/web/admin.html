@@ -22,8 +22,13 @@
   </header>
   <div class="admin-shell flex-grow-1">
     <nav class="admin-nav" aria-label="Admin">
-      <button type="button" id="nav-hosts" class="admin-nav-btn is-active" data-section="hosts">Hosts</button>
-      <button type="button" id="nav-settings" class="admin-nav-btn" data-section="settings">Settings</button>
+      <button type="button" id="nav-hosts" class="admin-nav-btn is-active">Hosts</button>
+      <span class="admin-nav-label">Settings</span>
+      <button type="button" id="nav-general" class="admin-nav-btn">General</button>
+      <button type="button" id="nav-registration" class="admin-nav-btn">Registration</button>
+      <button type="button" id="nav-certificate" class="admin-nav-btn">Certificate</button>
+      <button type="button" id="nav-groups" class="admin-nav-btn">Groups</button>
+      <button type="button" id="nav-accounts" class="admin-nav-btn">Accounts</button>
     </nav>
     <main class="admin-main flex-grow-1 overflow-auto">
       <div class="admin-wrap px-3 px-md-4 py-4">
@@ -34,167 +39,151 @@
           <input id="host-admin-q" class="form-control form-control-sm mb-3" type="search" placeholder="Search hosts" autocomplete="off" spellcheck="false">
           <div id="admin-hosts" class="list-group"></div>
         </section>
-        <section id="panel-settings" hidden>
-          <h1 class="h3">Settings</h1>
-          <p class="text-secondary">Branding, registration, the agent certificate, and how long logs and sessions are kept. Groups and accounts are here too.</p>
-          <nav class="settings-subnav" aria-label="Settings">
-            <a class="settings-jump" href="#settings">General</a>
-            <a class="settings-jump" href="#registration">Registration</a>
-            <a class="settings-jump" href="#certificate">Certificate</a>
-            <a class="settings-jump" href="#groups">Groups</a>
-            <a class="settings-jump" href="#accounts">Accounts</a>
-          </nav>
-          <form id="save-settings">
-            <section id="settings-general" class="settings-section card mb-4">
-              <div class="card-body">
-                <h2 class="h5">Branding</h2>
-                <p class="text-secondary small">The name is shown in the header and on the sign-in page. Leave it blank to use Dlog. The tagline replaces the sentence under the name on the sign-in page.</p>
-                <div class="row g-3">
-                  <div class="col-md-4">
-                    <label class="form-label" for="brand-name">Name</label>
-                    <input id="brand-name" class="form-control" maxlength="40" autocomplete="off" spellcheck="false">
-                  </div>
-                  <div class="col-md-8">
-                    <label class="form-label" for="brand-tagline">Sign-in tagline</label>
-                    <input id="brand-tagline" class="form-control" maxlength="80" autocomplete="off">
-                  </div>
+        <section id="panel-general" hidden>
+          <h1 class="h3">General</h1>
+          <p class="text-secondary">The name is shown in the header and on the sign-in page. Leave it blank to use Dlog. The tagline replaces the sentence under the name on the sign-in page.</p>
+          <form id="save-general">
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label" for="brand-name">Name</label>
+                <input id="brand-name" class="form-control" maxlength="40" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="col-md-8">
+                <label class="form-label" for="brand-tagline">Sign-in tagline</label>
+                <input id="brand-tagline" class="form-control" maxlength="80" autocomplete="off">
+              </div>
+            </div>
+            <h2 class="h5 mt-4">Logs and sessions</h2>
+            <p class="text-secondary">Lines older than the retention window are deleted about once a minute. Keep logs stores them until you delete a host. A session stays signed in while the browser is in use, and each request extends it. A host looks offline when nothing has been heard for the offline window. Agents send a heartbeat every 15 seconds.</p>
+            <div class="row g-3">
+              <div class="col-sm-4">
+                <label class="form-label" for="retention">Keep logs for</label>
+                <select id="retention" class="form-select">
+                  <option value="1d">1 day</option>
+                  <option value="7d" selected>7 days</option>
+                  <option value="30d">30 days</option>
+                  <option value="90d">90 days</option>
+                  <option value="0">Keep logs</option>
+                </select>
+              </div>
+              <div class="col-sm-4">
+                <label class="form-label" for="session-length">Session length</label>
+                <select id="session-length" class="form-select">
+                  <option value="4h">4 hours</option>
+                  <option value="12h" selected>12 hours</option>
+                  <option value="24h">1 day</option>
+                  <option value="7d">7 days</option>
+                  <option value="30d">30 days</option>
+                </select>
+              </div>
+              <div class="col-sm-4">
+                <label class="form-label" for="offline-after">Show offline after</label>
+                <select id="offline-after" class="form-select">
+                  <option value="45s">45 seconds</option>
+                  <option value="2m">2 minutes</option>
+                  <option value="5m">5 minutes</option>
+                  <option value="15m">15 minutes</option>
+                </select>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-warning mt-4">Save</button>
+          </form>
+        </section>
+        <section id="panel-registration" hidden>
+          <h1 class="h3">Registration</h1>
+          <p class="text-secondary">Automatic registration creates a host when an agent signs in with this server's certificate. Turn it off and new hostnames wait for approval. An agent that already registered keeps its token and can register again. A new host joins the default group, or stays ungrouped.</p>
+          <form id="save-registration">
+            <div class="form-check mb-3">
+              <input id="auto-register" class="form-check-input" type="checkbox" checked>
+              <label class="form-check-label" for="auto-register">Automatic registration</label>
+            </div>
+            <div class="col-sm-6 col-md-4">
+              <label class="form-label" for="default-group">Group for new hosts</label>
+              <select id="default-group" class="form-select">
+                <option value="">Ungrouped</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-warning mt-4">Save</button>
+          </form>
+          <h2 class="h5 mt-4">Waiting for approval</h2>
+          <p class="text-secondary">These agents signed a registration while automatic registration was off. Approve creates the host. The agent receives a token the next time it registers. Dismiss drops the request.</p>
+          <div id="pending-hosts" class="list-group"></div>
+        </section>
+        <section id="panel-certificate" hidden>
+          <h1 class="h3">Certificate</h1>
+          <p class="text-secondary">Every agent uses this certificate to register. Replacing it stops registration until each agent has the new certificate and key. Hosts that already have a token keep sending logs.</p>
+          <p id="cert-fingerprint" class="cert-fp font-monospace small mb-1"></p>
+          <p id="cert-expiry" class="text-secondary small mb-1"></p>
+          <p id="cert-paths" class="text-secondary small"></p>
+          <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-sm btn-outline-light" href="/api/v1/admin/certificate.pem">Download certificate</a>
+            <button type="button" id="generate-cert" class="btn btn-sm btn-outline-danger">Generate a new certificate</button>
+          </div>
+          <div id="cert-once" class="mt-3" hidden></div>
+          <form id="replace-cert" class="mt-4">
+            <h2 class="h6">Replace with your own pair</h2>
+            <p class="text-secondary">Use an ECDSA P-256 certificate and its private key. Both files are PEM text.</p>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label" for="cert-file">Certificate</label>
+                <input id="cert-file" class="form-control" type="file" accept=".pem,.crt,.cer,text/plain">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="key-file">Private key</label>
+                <input id="key-file" class="form-control" type="file" accept=".pem,.key,text/plain">
+              </div>
+            </div>
+            <button type="submit" class="btn btn-outline-warning mt-3">Replace certificate</button>
+          </form>
+        </section>
+        <section id="panel-groups" hidden>
+          <h1 class="h3">Groups</h1>
+          <p class="text-secondary">A group is a folder in the log list. A host is in one group. Deleting a group leaves its hosts ungrouped. A name starts with a letter or digit and may use letters, digits, spaces, <span class="font-monospace">.</span>, <span class="font-monospace">_</span>, and <span class="font-monospace">-</span>.</p>
+          <form id="create-group" class="card mb-4">
+            <div class="card-body">
+              <h2 class="h5">New group</h2>
+              <div class="row g-2 align-items-end">
+                <div class="col-sm">
+                  <label class="form-label" for="group-name">Name</label>
+                  <input id="group-name" class="form-control" name="name" maxlength="64" autocomplete="off" spellcheck="false" required>
                 </div>
-                <h2 class="h5 mt-4">Logs and sessions</h2>
-                <p class="text-secondary small">Lines older than the retention window are deleted about once a minute. Keep logs stores them until you delete a host. A session stays signed in while the browser is in use, and each request extends it. A host looks offline when nothing has been heard for the offline window. Agents send a heartbeat every 15 seconds.</p>
-                <div class="row g-3">
-                  <div class="col-sm-4">
-                    <label class="form-label" for="retention">Keep logs for</label>
-                    <select id="retention" class="form-select">
-                      <option value="1d">1 day</option>
-                      <option value="7d" selected>7 days</option>
-                      <option value="30d">30 days</option>
-                      <option value="90d">90 days</option>
-                      <option value="0">Keep logs</option>
-                    </select>
-                  </div>
-                  <div class="col-sm-4">
-                    <label class="form-label" for="session-length">Session length</label>
-                    <select id="session-length" class="form-select">
-                      <option value="4h">4 hours</option>
-                      <option value="12h" selected>12 hours</option>
-                      <option value="24h">1 day</option>
-                      <option value="7d">7 days</option>
-                      <option value="30d">30 days</option>
-                    </select>
-                  </div>
-                  <div class="col-sm-4">
-                    <label class="form-label" for="offline-after">Show offline after</label>
-                    <select id="offline-after" class="form-select">
-                      <option value="45s">45 seconds</option>
-                      <option value="2m">2 minutes</option>
-                      <option value="5m">5 minutes</option>
-                      <option value="15m">15 minutes</option>
-                    </select>
-                  </div>
+                <div class="col-sm-auto">
+                  <button type="submit" class="btn btn-warning">Create</button>
                 </div>
               </div>
-            </section>
-            <section id="settings-registration" class="settings-section card mb-4">
-              <div class="card-body">
-                <h2 class="h5">Registration</h2>
-                <p class="text-secondary small">Automatic registration creates a host when an agent signs in with this server's certificate. Turn it off and new hostnames wait for approval. An agent that already registered keeps its token and can register again. A new host joins the default group, or stays ungrouped.</p>
-                <div class="form-check mb-3">
-                  <input id="auto-register" class="form-check-input" type="checkbox" checked>
-                  <label class="form-check-label" for="auto-register">Automatic registration</label>
+            </div>
+          </form>
+          <div id="admin-groups" class="list-group"></div>
+        </section>
+        <section id="panel-accounts" hidden>
+          <h1 class="h3">Accounts</h1>
+          <p class="text-secondary">Users can read logs. Admins can also manage hosts, groups, and accounts. A user sees every host, or only the groups you tick. Hosts with no group stay visible to admins and to users who can see all hosts. A username starts with a letter or digit and may use letters, digits, <span class="font-monospace">.</span>, <span class="font-monospace">_</span>, and <span class="font-monospace">-</span>. A password is 8 to 72 characters. Setting a password signs that account out.</p>
+          <form id="create-user" class="card mb-4">
+            <div class="card-body">
+              <h2 class="h5">New account</h2>
+              <div class="row g-2 align-items-end">
+                <div class="col-sm">
+                  <label class="form-label" for="new-username">Username</label>
+                  <input id="new-username" class="form-control" name="username" autocomplete="off" maxlength="64" required>
                 </div>
-                <div class="col-sm-6 col-md-4">
-                  <label class="form-label" for="default-group">Group for new hosts</label>
-                  <select id="default-group" class="form-select">
-                    <option value="">Ungrouped</option>
+                <div class="col-sm">
+                  <label class="form-label" for="new-password">Password</label>
+                  <input id="new-password" class="form-control" name="password" type="password" autocomplete="new-password" required>
+                </div>
+                <div class="col-sm-3">
+                  <label class="form-label" for="new-role">Permission</label>
+                  <select id="new-role" class="form-select" name="role">
+                    <option value="user" selected>User</option>
+                    <option value="admin">Admin</option>
                   </select>
                 </div>
-              </div>
-            </section>
-            <button type="submit" class="btn btn-warning mb-4">Save settings</button>
-          </form>
-          <section class="settings-section mb-4">
-            <h2 class="h5">Waiting for approval</h2>
-            <p class="text-secondary small">These agents signed a registration while automatic registration was off. Approve creates the host. The agent receives a token the next time it registers. Dismiss drops the request.</p>
-            <div id="pending-hosts" class="list-group"></div>
-          </section>
-          <section id="settings-certificate" class="settings-section card mb-4">
-            <div class="card-body">
-              <h2 class="h5">Certificate</h2>
-              <p class="text-secondary small">Every agent uses this certificate to register. Replacing it stops registration until each agent has the new certificate and key. Hosts that already have a token keep sending logs.</p>
-              <p id="cert-fingerprint" class="cert-fp font-monospace small mb-1"></p>
-              <p id="cert-expiry" class="text-secondary small mb-1"></p>
-              <p id="cert-paths" class="text-secondary small"></p>
-              <div class="d-flex flex-wrap gap-2">
-                <a class="btn btn-sm btn-outline-light" href="/api/v1/admin/certificate.pem">Download certificate</a>
-                <button type="button" id="generate-cert" class="btn btn-sm btn-outline-danger">Generate a new certificate</button>
-              </div>
-              <div id="cert-once" class="mt-3" hidden></div>
-              <form id="replace-cert" class="mt-4">
-                <h3 class="h6">Replace with your own pair</h3>
-                <p class="text-secondary small">Use an ECDSA P-256 certificate and its private key. Both files are PEM text.</p>
-                <div class="row g-3">
-                  <div class="col-md-6">
-                    <label class="form-label" for="cert-file">Certificate</label>
-                    <input id="cert-file" class="form-control" type="file" accept=".pem,.crt,.cer,text/plain">
-                  </div>
-                  <div class="col-md-6">
-                    <label class="form-label" for="key-file">Private key</label>
-                    <input id="key-file" class="form-control" type="file" accept=".pem,.key,text/plain">
-                  </div>
+                <div class="col-sm-auto">
+                  <button type="submit" class="btn btn-warning">Create</button>
                 </div>
-                <button type="submit" class="btn btn-outline-warning mt-3">Replace certificate</button>
-              </form>
+              </div>
             </div>
-          </section>
-          <section id="settings-groups" class="settings-section">
-            <h2 class="h3">Groups</h2>
-            <p class="text-secondary">A group is a folder in the log list. A host is in one group. Deleting a group leaves its hosts ungrouped. A name starts with a letter or digit and may use letters, digits, spaces, <span class="font-monospace">.</span>, <span class="font-monospace">_</span>, and <span class="font-monospace">-</span>.</p>
-            <form id="create-group" class="card mb-4">
-              <div class="card-body">
-                <h3 class="h5">New group</h3>
-                <div class="row g-2 align-items-end">
-                  <div class="col-sm">
-                    <label class="form-label" for="group-name">Name</label>
-                    <input id="group-name" class="form-control" name="name" maxlength="64" autocomplete="off" spellcheck="false" required>
-                  </div>
-                  <div class="col-sm-auto">
-                    <button type="submit" class="btn btn-warning">Create</button>
-                  </div>
-                </div>
-              </div>
-            </form>
-            <div id="admin-groups" class="list-group mb-4"></div>
-          </section>
-          <section id="settings-accounts" class="settings-section">
-            <h2 class="h3">Accounts</h2>
-            <p class="text-secondary">Users can read logs. Admins can also manage hosts, groups, and accounts. A user sees every host, or only the groups you tick. Hosts with no group stay visible to admins and to users who can see all hosts. A username starts with a letter or digit and may use letters, digits, <span class="font-monospace">.</span>, <span class="font-monospace">_</span>, and <span class="font-monospace">-</span>. A password is 8 to 72 characters. Setting a password signs that account out.</p>
-            <form id="create-user" class="card mb-4">
-              <div class="card-body">
-                <h3 class="h5">New account</h3>
-                <div class="row g-2 align-items-end">
-                  <div class="col-sm">
-                    <label class="form-label" for="new-username">Username</label>
-                    <input id="new-username" class="form-control" name="username" autocomplete="off" maxlength="64" required>
-                  </div>
-                  <div class="col-sm">
-                    <label class="form-label" for="new-password">Password</label>
-                    <input id="new-password" class="form-control" name="password" type="password" autocomplete="new-password" required>
-                  </div>
-                  <div class="col-sm-3">
-                    <label class="form-label" for="new-role">Permission</label>
-                    <select id="new-role" class="form-select" name="role">
-                      <option value="user" selected>User</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                  </div>
-                  <div class="col-sm-auto">
-                    <button type="submit" class="btn btn-warning">Create</button>
-                  </div>
-                </div>
-              </div>
-            </form>
-            <div id="accounts" class="list-group"></div>
-          </section>
+          </form>
+          <div id="accounts" class="list-group"></div>
         </section>
       </div>
     </main>

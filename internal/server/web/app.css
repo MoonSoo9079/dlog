@@ -59,11 +59,14 @@ body {
 
 .admin-nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
   padding: 0.5rem 0.75rem;
   background: var(--bs-tertiary-bg);
   border-bottom: 1px solid var(--bs-border-color);
 }
+
+.admin-nav-label { display: none; }
 
 .admin-nav-btn {
   -webkit-appearance: none;
@@ -99,28 +102,6 @@ body {
 .account-panel { max-width: 32rem; }
 
 .account-groups { display: flex; flex-wrap: wrap; gap: 0.35rem 0.9rem; }
-
-.settings-subnav { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 1.25rem; }
-
-.settings-jump {
-  display: inline-block;
-  border-radius: 0.4rem;
-  padding: 0.3rem 0.7rem;
-  color: var(--bs-secondary-color);
-  font-size: 0.875rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.settings-jump:hover,
-.settings-jump:focus-visible { color: var(--bs-emphasis-color); }
-
-.settings-jump.is-active {
-  background: #241c10;
-  color: var(--bs-emphasis-color);
-}
-
-.settings-section { scroll-margin-top: 1rem; }
 
 .cert-fp { word-break: break-all; }
 
@@ -215,15 +196,26 @@ body {
   .admin-shell { flex-direction: row; }
 
   .admin-nav {
-    flex: 0 0 12rem;
+    flex: 0 0 13.5rem;
     flex-direction: column;
-    width: 12rem;
+    flex-wrap: nowrap;
+    width: 13.5rem;
     padding: 1rem 0.75rem;
     border-bottom: 0;
     border-right: 1px solid var(--bs-border-color);
   }
 
   .admin-nav-btn { width: 100%; }
+
+  .admin-nav-label {
+    display: block;
+    margin: 1.1rem 0.8rem 0.2rem;
+    color: var(--bs-secondary-color);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
 
 
   .host-pane {
