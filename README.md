@@ -78,7 +78,7 @@ docker compose -f deploy/server-compose.yaml up -d --build
 
 That file publishes host port 8080 to container port 8080 and stores the database in a volume. Leave `DLOG_ADMIN_PASSWORD` unset to generate the first admin password into that volume. Leave the agent certificate variables unset to generate `agent.crt` and `agent.key` there, then copy both files to each agent host. `DLOG_PUBLISH_PORT` changes the host port. It is not a server setting. Leave `DLOG_ADDR` at `:8080` unless you also change the port mapping.
 
-`deploy/agent-compose.yaml` and `deploy/server-compose.yaml` set every `DLOG_` variable the agent and the server read. An unset variable uses the default written in the file. Paths that follow a volume stay on that mount: the agent state directory, the agent certificate and key, and the server data directory.
+`deploy/agent-compose.yaml` and `deploy/server-compose.yaml` set every `DLOG_` variable the agent and the server read. An unset variable uses the default written in the file. Paths that follow a volume stay on that mount: the agent state directory, the agent certificate and key, and the server data directory. Configuration says what each variable does and why it is set.
 
 For a private CA, mount the PEM file and set `DLOG_CA_FILE` to that path inside the container. Podman works too: mount its API socket on `/var/run/docker.sock`, or point `DLOG_DOCKER_HOST` at the socket path inside the container (`unix:///run/podman/podman.sock`, or `$XDG_RUNTIME_DIR/podman/podman.sock` for rootless) and mount that socket there.
 
@@ -170,46 +170,58 @@ A new hostname returns 201. Registering an enabled hostname again returns 200 an
 
 ## Configuration
 
-Server flags override the same `DLOG_` variables.
+Each setting is an environment variable. The matching flag overrides it. Durations take a Go duration or a day suffix, such as `7d`, `168h`, `10m`, or `15s`. `0` means zero. A boolean accepts `1`, `true`, `yes`, or `on`, and `0`, `false`, `no`, or `off`. An empty value keeps the default.
 
-| Flag | Variable | Default |
-| --- | --- | --- |
-| `-addr` | `DLOG_ADDR` | `:8080` |
-| `-data-dir` | `DLOG_DATA_DIR` | `data/server` |
-| `-admin-user` | `DLOG_ADMIN_USER` | `admin`, used only when creating the first account |
-| `-admin-password` | `DLOG_ADMIN_PASSWORD` | generated into `admin.password` when the database has no accounts |
-| `-agent-cert` | `DLOG_AGENT_CERT` | `agent.crt` in the data directory |
-| `-agent-key` | `DLOG_AGENT_KEY` | `agent.key` in the data directory, written only when the certificate is generated |
-| `-retention` | `DLOG_RETENTION` | `168h` (`7d` is accepted; `0` keeps logs). Used only until Settings saves a retention. The saved value is what later starts use. |
-| `-tls-cert` / `-tls-key` | `DLOG_TLS_CERT` / `DLOG_TLS_KEY` | empty |
-| `-trust-proxy` | `DLOG_TRUST_PROXY` | false |
-| `-secure-cookies` | `DLOG_SECURE_COOKIES` | false |
-| `-log-level` | `DLOG_LOG_LEVEL` | `info` |
+The server image sets `DLOG_DATA_DIR=/var/lib/dlog` and `DLOG_ADDR=:8080`. The agent image sets `DLOG_STATE_DIR=/var/lib/dlog-agent`, `DLOG_DOCKER_HOST=/var/run/docker.sock`, `DLOG_AGENT_CERT=/etc/dlog/agent.crt`, and `DLOG_AGENT_KEY=/etc/dlog/agent.key`. The compose files set those again so the path the process reads is the path of the volume. The other compose values are the defaults below, so leaving the host variable unset does not change behavior.
 
-`dlog-server healthcheck` probes `http://127.0.0.1` on the port from `DLOG_ADDR`. Set `DLOG_HEALTH_URL` to override it.
+### Server
 
-Agent:
+| Variable | Flag | Default | What it does |
+| --- | --- | --- | --- |
+| `DLOG_ADDR` | `-addr` | `:8080` | Address the server listens on. The image and `deploy/server-compose.yaml` keep `:8080` because that is the container port the file publishes. Change it only together with that port mapping. |
+| `DLOG_DATA_DIR` | `-data-dir` | `data/server` | Directory for the database, the generated admin password, and the generated agent certificate. The image and the server compose file use `/var/lib/dlog` because that directory is the persistent volume. |
+| `DLOG_ADMIN_USER` | `-admin-user` | `admin` | Username of the first account. It is read only when the database has no accounts. A later start does not rename the account. |
+| `DLOG_ADMIN_PASSWORD` | `-admin-password` | empty | Password of that first account. Empty makes the server generate one, print it once, and store it in `admin.password` inside the data directory. The server compose file leaves it empty so the first start still does that. Set it when the first password should be one you chose. |
+| `DLOG_AGENT_CERT` | `-agent-cert` | empty | Shared agent certificate. Empty generates `agent.crt` in the data directory. Set a path to use a certificate you already have. The server compose file leaves it empty so the generated pair stays in the data volume, where you can copy it to each agent. |
+| `DLOG_AGENT_KEY` | `-agent-key` | empty | Where the private key is written when the certificate is generated. Empty writes `agent.key` next to the certificate. Set it with `DLOG_AGENT_CERT` when both files already exist. |
+| `DLOG_RETENTION` | `-retention` | `168h` | How long logs are kept. This seeds Settings only when retention has never been saved. `0` keeps logs. After that, the console value wins, so changing this variable on a later start does nothing until you change retention in Settings. |
+| `DLOG_TLS_CERT` | `-tls-cert` | empty | PEM certificate for HTTPS. Empty serves plain HTTP. Set it together with `DLOG_TLS_KEY`. The health check then uses `https`. |
+| `DLOG_TLS_KEY` | `-tls-key` | empty | Private key for that certificate. The server refuses to start when only one of the two is set. |
+| `DLOG_TRUST_PROXY` | `-trust-proxy` | false | Trust `X-Forwarded-For` for the client address and `X-Forwarded-Proto` when deciding that the session cookie is `Secure`. Set it when a reverse proxy is the only client the server sees. Leave it false for direct connections, so a caller cannot pick their own address. |
+| `DLOG_SECURE_COOKIES` | `-secure-cookies` | false | Always mark the session cookie `Secure`, so a browser sends it only over HTTPS. Set it when operators reach the server through HTTPS. With `DLOG_TRUST_PROXY`, a proxy that sends `X-Forwarded-Proto: https` already marks the cookie `Secure`. |
+| `DLOG_LOG_LEVEL` | `-log-level` | `info` | How much the server writes to stderr. `debug`, `info`, `warn`, or `error`. |
+| `DLOG_HEALTH_URL` | | empty | URL for `dlog-server healthcheck`. Empty probes `http://127.0.0.1` on the port in `DLOG_ADDR`, or `https` when `DLOG_TLS_CERT` is set. Set it when that derived URL is the wrong probe. |
 
-| Flag | Variable | Default |
-| --- | --- | --- |
-| `-server` | `DLOG_SERVER_URL` | required |
-| `-agent-cert` | `DLOG_AGENT_CERT` | required, same certificate on every agent |
-| `-agent-key` | `DLOG_AGENT_KEY` | required, private key for that certificate |
-| `-hostname` | `DLOG_HOSTNAME` | hostname file, then the machine hostname |
-| `-hostname-file` | `DLOG_HOSTNAME_FILE` | empty |
-| `-state-dir` | `DLOG_STATE_DIR` | `data/agent` |
-| `-docker-host` | `DLOG_DOCKER_HOST` | `/var/run/docker.sock` |
-| `-ca-file` | `DLOG_CA_FILE` | system trust store |
-| `-since` | `DLOG_SINCE` | `10m` |
-| `-batch` | `DLOG_BATCH` | `200` |
-| `-flush` | `DLOG_FLUSH` | `1s` |
-| `-heartbeat` | `DLOG_HEARTBEAT` | `15s` |
-| `-buffer` | `DLOG_BUFFER` | `10000` |
-| `-include-self` | `DLOG_INCLUDE_SELF` | false |
-| `-exclude` | `DLOG_EXCLUDE` | empty |
-| `-log-level` | `DLOG_LOG_LEVEL` | `info` |
+### Agent
 
-Hostnames must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`. Set `DLOG_HOSTNAME` to the node name. The container's own hostname is a poor identity if the container is recreated.
+| Variable | Flag | Default | What it does |
+| --- | --- | --- | --- |
+| `DLOG_SERVER_URL` | `-server` | required | Base URL of the server. The agent only dials out. The agent compose file requires it so the container cannot start without a server to call. |
+| `DLOG_AGENT_CERT` | `-agent-cert` | required | Path of the shared agent certificate. Every agent carries the same file, and the server accepts registration because it trusts this certificate. The image and the agent compose file use `/etc/dlog/agent.crt` because that is where the certificate is mounted. |
+| `DLOG_AGENT_KEY` | `-agent-key` | required | Path of the private key for that certificate. The agent signs its registration with it. The compose file uses `/etc/dlog/agent.key` to match the key mount. |
+| `DLOG_HOSTNAME` | `-hostname` | the machine hostname | Name recorded for this host. It must stay stable and match `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`. The compose file requires it because a new container gets a new hostname and would show up as a different host. |
+| `DLOG_HOSTNAME_FILE` | `-hostname-file` | empty | File to read the hostname from, used only when `DLOG_HOSTNAME` is empty. Set it when the name should come from a mounted file, such as the host's `/etc/hostname`. |
+| `DLOG_STATE_DIR` | `-state-dir` | `data/agent` | Directory for the host token and the log cursors. The image and the compose file use `/var/lib/dlog-agent` because that is the state volume. Losing it makes the agent register again and re-read Docker from `DLOG_SINCE`. |
+| `DLOG_DOCKER_HOST` | `-docker-host` | `/var/run/docker.sock` | Docker API socket, or a `unix://` URL. This is the daemon whose containers are shipped. The compose file keeps the default and mounts the host socket on that path, so the agent sees the host's containers rather than an empty daemon of its own. For Podman, mount that socket on the same path, or set this to the socket path inside the container. |
+| `DLOG_CA_FILE` | `-ca-file` | empty | PEM bundle used to verify the server certificate. Empty uses the system trust store, which is enough for a public certificate. Set it, and mount the file there, when a private CA signed the server certificate. |
+| `DLOG_SINCE` | `-since` | `10m` | How far back to read a container the first time. Later reads continue from the saved cursor. It keeps a new agent from importing the daemon's whole history. An invalid value stops the agent. |
+| `DLOG_BATCH` | `-batch` | `200` | Lines sent in one request. The server accepts at most 1000, and the agent will not send more than 500. A value that is not a positive number stays 200. |
+| `DLOG_FLUSH` | `-flush` | `1s` | Longest a line waits before a short batch is sent. A smaller value shows lines sooner. A larger value groups more lines into one request. An invalid value stops the agent. |
+| `DLOG_HEARTBEAT` | `-heartbeat` | `15s` | How often the agent reports that the host is up, including how many buffered lines it has dropped. That report refreshes the host's last-seen time. The console marks the host offline after the offline window saved in Settings. An invalid value stops the agent. |
+| `DLOG_BUFFER` | `-buffer` | `10000` | Unsent lines kept in memory while the server cannot be reached. The buffer is not written to disk. When it fills, the oldest lines are dropped and the drop count is shown on the host. A value that is not a positive number stays 10000. |
+| `DLOG_INCLUDE_SELF` | `-include-self` | false | Also ship the agent container's own logs. It is false so the agent's own output is not mixed into the logs it collects. The compose file sets `false` for that reason. |
+| `DLOG_EXCLUDE` | `-exclude` | empty | Comma-separated container names to skip, besides containers labeled `dlog.exclude=true`. The agent compose service has that label so it is skipped even when its name changes. |
+| `DLOG_LOG_LEVEL` | `-log-level` | `info` | How much the agent writes to stderr. `debug`, `info`, `warn`, or `error`. |
+
+### Compose only
+
+Compose reads these names. The server and the agent do not.
+
+| Variable | What it does |
+| --- | --- |
+| `DLOG_AGENT_CERT_FILE` | Host path of `agent.crt`. `deploy/agent-compose.yaml` mounts it at `/etc/dlog/agent.crt` and requires it, because the agent cannot register without that certificate. |
+| `DLOG_AGENT_KEY_FILE` | Host path of `agent.key`, mounted at `/etc/dlog/agent.key`. Required for the same reason. |
+| `DLOG_PUBLISH_PORT` | Host port forwarded to container port 8080 in `deploy/server-compose.yaml`. The default is `8080`. It does not change `DLOG_ADDR`. |
 
 ## Storage
 
