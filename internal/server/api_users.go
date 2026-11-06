@@ -21,11 +21,15 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, statusForDecode(err), "bad request")
 		return
 	}
+	me := principalFrom(r)
+	if me.Source == SourceDirectory {
+		writeError(w, http.StatusBadRequest, "directory account")
+		return
+	}
 	if !validPassword(body.Password) {
 		writeError(w, http.StatusBadRequest, "password must be 8 to 72 characters")
 		return
 	}
-	me := principalFrom(r)
 	ip := clientIP(r, s.trustProxy)
 	if s.login.blocked(ip, 10, time.Minute) {
 		writeError(w, http.StatusTooManyRequests, "too many attempts")

@@ -487,7 +487,7 @@ INSERT INTO users (id, username, password_hash, role, created_at) VALUES ('usr_o
 	}
 	t.Cleanup(func() { s.Close() })
 	acct, err := s.User("usr_old")
-	if err != nil || !acct.AllHosts || len(acct.GroupIDs) != 0 || acct.Username != "ada" {
+	if err != nil || !acct.AllHosts || len(acct.GroupIDs) != 0 || acct.Username != "ada" || acct.Source != SourceLocal {
 		t.Fatalf("migrated account: %+v %v", acct, err)
 	}
 }

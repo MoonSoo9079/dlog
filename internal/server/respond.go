@@ -48,6 +48,8 @@ func writeStoreError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "cannot remove the last admin")
 	case errors.Is(err, ErrInvalid):
 		writeError(w, http.StatusBadRequest, "invalid account")
+	case errors.Is(err, ErrDirectoryAccount):
+		writeError(w, http.StatusBadRequest, "directory account")
 	default:
 		slog.Error("store", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal error")

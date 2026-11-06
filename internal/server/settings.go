@@ -3,8 +3,10 @@ package server
 import (
 	"database/sql"
 	"errors"
+	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 	"unicode"
 )
@@ -17,19 +19,33 @@ const (
 	minOffline       = 30 * time.Second
 	maxOffline       = 15 * time.Minute
 	maxRetention     = 10 * 365 * 24 * time.Hour
+
+	defaultLDAPFilter = "(uid=%s)"
+	defaultLDAPAttr   = "uid"
+	maxBindPassword   = 1024
 )
 
 // Settings is the operator configuration stored in the database.
 // Retention, session length, and the offline window survive a restart.
 // The server's -retention flag is used only until a value is saved.
 type Settings struct {
-	BrandName      string `json:"brand_name"`
-	BrandTagline   string `json:"brand_tagline"`
-	AutoRegister   bool   `json:"auto_register"`
-	DefaultGroupID string `json:"default_group_id"`
-	RetentionMS    int64  `json:"retention_ms"`
-	SessionMS      int64  `json:"session_ms"`
-	OfflineMS      int64  `json:"offline_ms"`
+	BrandName        string `json:"brand_name"`
+	BrandTagline     string `json:"brand_tagline"`
+	AutoRegister     bool   `json:"auto_register"`
+	DefaultGroupID   string `json:"default_group_id"`
+	RetentionMS      int64  `json:"retention_ms"`
+	SessionMS        int64  `json:"session_ms"`
+	OfflineMS        int64  `json:"offline_ms"`
+	LDAPEnabled      bool   `json:"ldap_enabled"`
+	LDAPURL          string `json:"ldap_url"`
+	LDAPStartTLS     bool   `json:"ldap_starttls"`
+	LDAPBindDN       string `json:"ldap_bind_dn"`
+	LDAPBindPassword string `json:"-"`
+	LDAPBindSet      bool   `json:"ldap_bind_password_set"`
+	LDAPBaseDN       string `json:"ldap_base_dn"`
+	LDAPUserFilter   string `json:"ldap_user_filter"`
+	LDAPUsernameAttr string `json:"ldap_username_attr"`
+	LDAPAdminGroup   string `json:"ldap_admin_group"`
 }
 
 func (s Settings) Retention() time.Duration {
@@ -57,10 +73,12 @@ func (s Settings) Offline() time.Duration {
 
 func defaultSettings() Settings {
 	return Settings{
-		AutoRegister: true,
-		RetentionMS:  defaultRetention.Milliseconds(),
-		SessionMS:    defaultSession.Milliseconds(),
-		OfflineMS:    OnlineWindow.Milliseconds(),
+		AutoRegister:     true,
+		RetentionMS:      defaultRetention.Milliseconds(),
+		SessionMS:        defaultSession.Milliseconds(),
+		OfflineMS:        OnlineWindow.Milliseconds(),
+		LDAPUserFilter:   defaultLDAPFilter,
+		LDAPUsernameAttr: defaultLDAPAttr,
 	}
 }
 
@@ -85,6 +103,96 @@ func validTagline(s string) bool {
 		}
 	}
 	return true
+}
+
+var ldapAttrRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]{0,31}$`)
+
+func (cfg *Settings) fillDirectoryDefaults() {
+	if strings.TrimSpace(cfg.LDAPUserFilter) == "" {
+		cfg.LDAPUserFilter = defaultLDAPFilter
+	}
+	if strings.TrimSpace(cfg.LDAPUsernameAttr) == "" {
+		cfg.LDAPUsernameAttr = defaultLDAPAttr
+	}
+	cfg.LDAPBindSet = cfg.LDAPBindPassword != ""
+}
+
+// normalizeDirectory trims directory fields, fills empty filter and attribute
+// defaults, and reports the first problem. An empty string means the settings
+// can be saved. Non-empty fields are checked even when the directory is off.
+func normalizeDirectory(cfg *Settings) string {
+	cfg.LDAPURL = strings.TrimSpace(cfg.LDAPURL)
+	cfg.LDAPBindDN = strings.TrimSpace(cfg.LDAPBindDN)
+	cfg.LDAPBaseDN = strings.TrimSpace(cfg.LDAPBaseDN)
+	cfg.LDAPUserFilter = strings.TrimSpace(cfg.LDAPUserFilter)
+	cfg.LDAPUsernameAttr = strings.TrimSpace(cfg.LDAPUsernameAttr)
+	cfg.LDAPAdminGroup = strings.TrimSpace(cfg.LDAPAdminGroup)
+	cfg.fillDirectoryDefaults()
+	if len(cfg.LDAPBindPassword) > maxBindPassword {
+		return "invalid bind password"
+	}
+	if cfg.LDAPURL != "" && !validLDAPURL(cfg.LDAPURL) {
+		return "invalid directory url"
+	}
+	if cfg.LDAPStartTLS && !ldapScheme(cfg.LDAPURL) {
+		return "starttls requires an ldap url"
+	}
+	if !validUserFilter(cfg.LDAPUserFilter) {
+		return "invalid directory filter"
+	}
+	if !ldapAttrRE.MatchString(cfg.LDAPUsernameAttr) {
+		return "invalid directory attribute"
+	}
+	if !validDirectoryDN(cfg.LDAPBindDN) || !validDirectoryDN(cfg.LDAPBaseDN) || !validDirectoryDN(cfg.LDAPAdminGroup) {
+		return "invalid directory name"
+	}
+	if cfg.LDAPEnabled && (cfg.LDAPURL == "" || cfg.LDAPBaseDN == "") {
+		return "directory url and base are required"
+	}
+	return ""
+}
+
+func ldapScheme(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == "ldap"
+}
+
+func validLDAPURL(raw string) bool {
+	if len(raw) > 512 {
+		return false
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	if u.Scheme != "ldap" && u.Scheme != "ldaps" {
+		return false
+	}
+	return u.Hostname() != ""
+}
+
+func validUserFilter(s string) bool {
+	if len(s) == 0 || len(s) > 512 || strings.Count(s, "%s") != 1 {
+		return false
+	}
+	return !strings.Contains(strings.Replace(s, "%s", "", 1), "%")
+}
+
+func validDirectoryDN(s string) bool {
+	if s == "" {
+		return true
+	}
+	n := 0
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || r == '<' || r == '>' || unicode.Is(unicode.Cc, r) {
+			return false
+		}
+		n++
+		if n > 512 {
+			return false
+		}
+	}
+	return n >= 1
 }
 
 // Retention is how long log lines are kept. Zero keeps them.
@@ -152,6 +260,34 @@ func (s *Store) loadSettings() error {
 			}
 		}
 	}
+	if v, ok := raw["ldap_enabled"]; ok {
+		cfg.LDAPEnabled = v == "1"
+	}
+	if v, ok := raw["ldap_url"]; ok {
+		cfg.LDAPURL = v
+	}
+	if v, ok := raw["ldap_starttls"]; ok {
+		cfg.LDAPStartTLS = v == "1"
+	}
+	if v, ok := raw["ldap_bind_dn"]; ok {
+		cfg.LDAPBindDN = v
+	}
+	if v, ok := raw["ldap_bind_password"]; ok {
+		cfg.LDAPBindPassword = v
+	}
+	if v, ok := raw["ldap_base_dn"]; ok {
+		cfg.LDAPBaseDN = v
+	}
+	if v, ok := raw["ldap_user_filter"]; ok {
+		cfg.LDAPUserFilter = v
+	}
+	if v, ok := raw["ldap_username_attr"]; ok {
+		cfg.LDAPUsernameAttr = v
+	}
+	if v, ok := raw["ldap_admin_group"]; ok {
+		cfg.LDAPAdminGroup = v
+	}
+	cfg.fillDirectoryDefaults()
 	s.mu.Lock()
 	s.settings = cfg
 	s.settingsLoaded = true
@@ -180,6 +316,15 @@ func (s *Store) SaveSettings(cfg Settings) error {
 	if cfg.AutoRegister {
 		auto = "1"
 	}
+	cfg.fillDirectoryDefaults()
+	ldapEnabled := "0"
+	if cfg.LDAPEnabled {
+		ldapEnabled = "1"
+	}
+	startTLS := "0"
+	if cfg.LDAPStartTLS {
+		startTLS = "1"
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -193,6 +338,15 @@ func (s *Store) SaveSettings(cfg Settings) error {
 		{"retention_ms", strconv.FormatInt(cfg.RetentionMS, 10)},
 		{"session_ms", strconv.FormatInt(cfg.SessionMS, 10)},
 		{"offline_ms", strconv.FormatInt(cfg.OfflineMS, 10)},
+		{"ldap_enabled", ldapEnabled},
+		{"ldap_url", cfg.LDAPURL},
+		{"ldap_starttls", startTLS},
+		{"ldap_bind_dn", cfg.LDAPBindDN},
+		{"ldap_bind_password", cfg.LDAPBindPassword},
+		{"ldap_base_dn", cfg.LDAPBaseDN},
+		{"ldap_user_filter", cfg.LDAPUserFilter},
+		{"ldap_username_attr", cfg.LDAPUsernameAttr},
+		{"ldap_admin_group", cfg.LDAPAdminGroup},
 	}
 	for _, pair := range pairs {
 		_, err := tx.Exec(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, pair.key, pair.value)

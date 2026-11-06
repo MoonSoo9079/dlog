@@ -41,19 +41,31 @@ func (s *Server) writeSettings(w http.ResponseWriter) {
 
 func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		BrandName      *string `json:"brand_name"`
-		BrandTagline   *string `json:"brand_tagline"`
-		AutoRegister   *bool   `json:"auto_register"`
-		DefaultGroupID *string `json:"default_group_id"`
-		Retention      *string `json:"retention"`
-		Session        *string `json:"session"`
-		Offline        *string `json:"offline"`
+		BrandName             *string `json:"brand_name"`
+		BrandTagline          *string `json:"brand_tagline"`
+		AutoRegister          *bool   `json:"auto_register"`
+		DefaultGroupID        *string `json:"default_group_id"`
+		Retention             *string `json:"retention"`
+		Session               *string `json:"session"`
+		Offline               *string `json:"offline"`
+		LDAPEnabled           *bool   `json:"ldap_enabled"`
+		LDAPURL               *string `json:"ldap_url"`
+		LDAPStartTLS          *bool   `json:"ldap_starttls"`
+		LDAPBindDN            *string `json:"ldap_bind_dn"`
+		LDAPBindPassword      *string `json:"ldap_bind_password"`
+		LDAPClearBindPassword *bool   `json:"ldap_clear_bind_password"`
+		LDAPBaseDN            *string `json:"ldap_base_dn"`
+		LDAPUserFilter        *string `json:"ldap_user_filter"`
+		LDAPUsernameAttr      *string `json:"ldap_username_attr"`
+		LDAPAdminGroup        *string `json:"ldap_admin_group"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, statusForDecode(err), "bad request")
 		return
 	}
-	if body.BrandName == nil && body.BrandTagline == nil && body.AutoRegister == nil && body.DefaultGroupID == nil && body.Retention == nil && body.Session == nil && body.Offline == nil {
+	if body.BrandName == nil && body.BrandTagline == nil && body.AutoRegister == nil && body.DefaultGroupID == nil && body.Retention == nil && body.Session == nil && body.Offline == nil &&
+		body.LDAPEnabled == nil && body.LDAPURL == nil && body.LDAPStartTLS == nil && body.LDAPBindDN == nil && body.LDAPBindPassword == nil && body.LDAPClearBindPassword == nil &&
+		body.LDAPBaseDN == nil && body.LDAPUserFilter == nil && body.LDAPUsernameAttr == nil && body.LDAPAdminGroup == nil {
 		writeError(w, http.StatusBadRequest, "nothing to change")
 		return
 	}
@@ -110,6 +122,43 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		cfg.OfflineMS = d.Milliseconds()
+	}
+	if body.LDAPBindPassword != nil && *body.LDAPBindPassword != "" && body.LDAPClearBindPassword != nil && *body.LDAPClearBindPassword {
+		writeError(w, http.StatusBadRequest, "cannot set and clear the bind password")
+		return
+	}
+	if body.LDAPEnabled != nil {
+		cfg.LDAPEnabled = *body.LDAPEnabled
+	}
+	if body.LDAPURL != nil {
+		cfg.LDAPURL = *body.LDAPURL
+	}
+	if body.LDAPStartTLS != nil {
+		cfg.LDAPStartTLS = *body.LDAPStartTLS
+	}
+	if body.LDAPBindDN != nil {
+		cfg.LDAPBindDN = *body.LDAPBindDN
+	}
+	if body.LDAPBaseDN != nil {
+		cfg.LDAPBaseDN = *body.LDAPBaseDN
+	}
+	if body.LDAPUserFilter != nil {
+		cfg.LDAPUserFilter = *body.LDAPUserFilter
+	}
+	if body.LDAPUsernameAttr != nil {
+		cfg.LDAPUsernameAttr = *body.LDAPUsernameAttr
+	}
+	if body.LDAPAdminGroup != nil {
+		cfg.LDAPAdminGroup = *body.LDAPAdminGroup
+	}
+	if body.LDAPClearBindPassword != nil && *body.LDAPClearBindPassword {
+		cfg.LDAPBindPassword = ""
+	} else if body.LDAPBindPassword != nil && *body.LDAPBindPassword != "" {
+		cfg.LDAPBindPassword = *body.LDAPBindPassword
+	}
+	if msg := normalizeDirectory(&cfg); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
 	}
 	if err := s.store.SaveSettings(cfg); err != nil {
 		writeStoreError(w, err)

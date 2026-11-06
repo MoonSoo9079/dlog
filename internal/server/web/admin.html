@@ -29,6 +29,7 @@
       <button type="button" id="nav-certificate" class="admin-nav-btn">Certificate</button>
       <button type="button" id="nav-groups" class="admin-nav-btn">Groups</button>
       <button type="button" id="nav-accounts" class="admin-nav-btn">Accounts</button>
+      <button type="button" id="nav-directory" class="admin-nav-btn">Directory</button>
     </nav>
     <main class="admin-main flex-grow-1 overflow-auto">
       <div class="admin-wrap px-3 px-md-4 py-4">
@@ -157,7 +158,7 @@
         </section>
         <section id="panel-accounts" hidden>
           <h1 class="h3">Accounts</h1>
-          <p class="text-secondary">Users can read logs. Admins can also manage hosts, groups, and accounts. A user sees every host, or only the groups you tick. Hosts with no group stay visible to admins and to users who can see all hosts. A username starts with a letter or digit and may use letters, digits, <span class="font-monospace">.</span>, <span class="font-monospace">_</span>, and <span class="font-monospace">-</span>. A password is 8 to 72 characters. Setting a password signs that account out.</p>
+          <p class="text-secondary">Users can read logs. Admins can also manage hosts, groups, and accounts. A user sees every host, or only the groups you tick. Hosts with no group stay visible to admins and to users who can see all hosts. A username starts with a letter or digit and may use letters, digits, <span class="font-monospace">.</span>, <span class="font-monospace">_</span>, and <span class="font-monospace">-</span>. A password is 8 to 72 characters. Setting a password signs that account out. A directory account uses its directory password, and its role is set from the admin group at sign-in.</p>
           <form id="create-user" class="card mb-4">
             <div class="card-body">
               <h2 class="h5">New account</h2>
@@ -184,6 +185,65 @@
             </div>
           </form>
           <div id="accounts" class="list-group"></div>
+        </section>
+        <section id="panel-directory" hidden>
+          <h1 class="h3">Directory</h1>
+          <p class="text-secondary">People can sign in with a directory password. The first successful sign-in creates an account that can see every host. A member of the admin group is an admin, and each later sign-in updates that role. A local account is never replaced by a directory account with the same name. The bind password is saved and is not shown again.</p>
+          <form id="save-directory">
+            <div class="form-check mb-3">
+              <input id="ldap-enabled" class="form-check-input" type="checkbox">
+              <label class="form-check-label" for="ldap-enabled">Use a directory for sign-in</label>
+            </div>
+            <div class="row g-3">
+              <div class="col-md-8">
+                <label class="form-label" for="ldap-url">Directory URL</label>
+                <input id="ldap-url" class="form-control" autocomplete="off" spellcheck="false" placeholder="ldap://ldap.example.com">
+              </div>
+              <div class="col-md-4 d-flex align-items-end">
+                <div class="form-check mb-2">
+                  <input id="ldap-starttls" class="form-check-input" type="checkbox">
+                  <label class="form-check-label" for="ldap-starttls">StartTLS</label>
+                </div>
+              </div>
+            </div>
+            <p class="text-secondary small mt-2">StartTLS is for an ldap:// URL. An ldaps:// URL is already encrypted.</p>
+            <div class="row g-3 mt-1">
+              <div class="col-md-6">
+                <label class="form-label" for="ldap-bind-dn">Bind DN</label>
+                <input id="ldap-bind-dn" class="form-control" autocomplete="off" spellcheck="false" placeholder="cn=reader,dc=example,dc=org">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="ldap-bind-password">Bind password</label>
+                <input id="ldap-bind-password" class="form-control" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved password">
+                <p id="ldap-bind-set" class="form-text" hidden>A bind password is saved.</p>
+                <div class="form-check mt-2">
+                  <input id="ldap-clear-bind" class="form-check-input" type="checkbox">
+                  <label class="form-check-label" for="ldap-clear-bind">Remove the saved bind password</label>
+                </div>
+              </div>
+            </div>
+            <div class="mt-3">
+              <label class="form-label" for="ldap-base-dn">Base DN</label>
+              <input id="ldap-base-dn" class="form-control" autocomplete="off" spellcheck="false" placeholder="dc=example,dc=org">
+            </div>
+            <div class="row g-3 mt-1">
+              <div class="col-md-8">
+                <label class="form-label" for="ldap-user-filter">User filter</label>
+                <input id="ldap-user-filter" class="form-control" autocomplete="off" spellcheck="false" value="(uid=%s)">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="ldap-username-attr">Username attribute</label>
+                <input id="ldap-username-attr" class="form-control" autocomplete="off" spellcheck="false" value="uid">
+              </div>
+            </div>
+            <p class="text-secondary small mt-2">The filter needs one <span class="font-monospace">%s</span>. That is replaced with the username. The attribute must match the name the person types, ignoring case.</p>
+            <div class="mt-3">
+              <label class="form-label" for="ldap-admin-group">Admin group DN</label>
+              <input id="ldap-admin-group" class="form-control" autocomplete="off" spellcheck="false" placeholder="cn=admins,ou=groups,dc=example,dc=org">
+            </div>
+            <p class="text-secondary small mt-2">Leave the bind DN blank to search without a bind. Leave the admin group blank and every directory account is a user.</p>
+            <button type="submit" class="btn btn-warning mt-3">Save</button>
+          </form>
         </section>
       </div>
     </main>

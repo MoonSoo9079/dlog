@@ -10,8 +10,14 @@ function loadCollapsed() {
 }
 
 const loginError = document.getElementById("login-error");
-if (loginError && new URLSearchParams(location.search).get("error")) {
-  loginError.hidden = false;
+if (loginError) {
+  const reason = new URLSearchParams(location.search).get("error");
+  if (reason === "directory") {
+    loginError.textContent = "The directory is unavailable.";
+    loginError.hidden = false;
+  } else if (reason) {
+    loginError.hidden = false;
+  }
 }
 
 if (document.getElementById("hosts")) {
@@ -512,12 +518,14 @@ function initAdmin() {
   const hostQuery = document.getElementById("host-admin-q");
   const generalForm = document.getElementById("save-general");
   const registrationForm = document.getElementById("save-registration");
-  const sections = ["hosts", "general", "registration", "certificate", "groups", "accounts"];
+  const directoryForm = document.getElementById("save-directory");
+  const sections = ["hosts", "general", "registration", "certificate", "groups", "accounts", "directory"];
   let hosts = [];
   let groups = [];
   let savedSettings = null;
   let generalDirty = false;
   let registrationDirty = false;
+  let directoryDirty = false;
 
   for (const id of sections) {
     document.getElementById("nav-" + id).addEventListener("click", () => {
@@ -577,6 +585,33 @@ function initAdmin() {
       });
       registrationDirty = false;
       fillSettings(data);
+      toast("Settings saved");
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+  directoryForm.addEventListener("input", () => { directoryDirty = true; });
+  directoryForm.addEventListener("change", () => { directoryDirty = true; });
+  directoryForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = {
+      ldap_enabled: document.getElementById("ldap-enabled").checked,
+      ldap_url: document.getElementById("ldap-url").value.trim(),
+      ldap_starttls: document.getElementById("ldap-starttls").checked,
+      ldap_bind_dn: document.getElementById("ldap-bind-dn").value.trim(),
+      ldap_base_dn: document.getElementById("ldap-base-dn").value.trim(),
+      ldap_user_filter: document.getElementById("ldap-user-filter").value.trim(),
+      ldap_username_attr: document.getElementById("ldap-username-attr").value.trim(),
+      ldap_admin_group: document.getElementById("ldap-admin-group").value.trim(),
+    };
+    const secret = document.getElementById("ldap-bind-password").value;
+    if (secret) body.ldap_bind_password = secret;
+    if (document.getElementById("ldap-clear-bind").checked) body.ldap_clear_bind_password = true;
+    try {
+      const data = await api("/api/v1/admin/settings", { method: "PATCH", body: JSON.stringify(body) });
+      directoryDirty = false;
+      fillSettings(data);
+      paintDirectory(data);
       toast("Settings saved");
     } catch (err) {
       toast(err.message);
@@ -835,6 +870,21 @@ function initAdmin() {
       document.getElementById("auto-register").checked = !!data.auto_register;
       paintDefaultGroup(data.default_group_id || "");
     }
+    if (!directoryDirty && !directoryForm.contains(document.activeElement)) paintDirectory(data);
+  }
+
+  function paintDirectory(data) {
+    document.getElementById("ldap-enabled").checked = !!data.ldap_enabled;
+    document.getElementById("ldap-url").value = data.ldap_url || "";
+    document.getElementById("ldap-starttls").checked = !!data.ldap_starttls;
+    document.getElementById("ldap-bind-dn").value = data.ldap_bind_dn || "";
+    document.getElementById("ldap-base-dn").value = data.ldap_base_dn || "";
+    document.getElementById("ldap-user-filter").value = data.ldap_user_filter || "(uid=%s)";
+    document.getElementById("ldap-username-attr").value = data.ldap_username_attr || "uid";
+    document.getElementById("ldap-admin-group").value = data.ldap_admin_group || "";
+    document.getElementById("ldap-bind-password").value = "";
+    document.getElementById("ldap-clear-bind").checked = false;
+    document.getElementById("ldap-bind-set").hidden = !data.ldap_bind_password_set;
   }
 
   function paintDefaultGroup(selected) {
@@ -953,6 +1003,11 @@ function initAccount() {
     const summary = document.getElementById("account-summary");
     if (summary && me) summary.textContent = me.username + " · " + (me.role === "admin" ? "Admin" : "User");
     if (me && me.role === "admin") showAdminLinks();
+    if (me && me.source === "directory") {
+      document.getElementById("change-password").hidden = true;
+      const note = document.getElementById("account-directory");
+      if (note) note.hidden = false;
+    }
   }).catch(() => {});
   document.getElementById("change-password").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -1022,33 +1077,35 @@ function initAccounts() {
   }
 
   function accountRow(u) {
-    const role = el("select", { class: "form-select form-select-sm w-auto", "aria-label": "Permission for " + u.username }, [
-      accountOption("user", "User", u.role === "user"),
-      accountOption("admin", "Admin", u.role === "admin"),
-    ]);
-    role.addEventListener("change", () => saveRole(u, role));
-    const password = el("input", {
-      class: "form-control form-control-sm account-password",
-      type: "password",
-      autocomplete: "new-password",
-      placeholder: "New password",
-      "aria-label": "New password for " + u.username,
-    });
-    const setPassword = el("button", { type: "button", class: "btn btn-sm btn-outline-secondary" }, ["Set password"]);
-    setPassword.addEventListener("click", () => savePassword(u, password));
+    const directory = u.source === "directory";
+    const who = u.role === "admin" ? "Admin" : "User";
     const del = el("button", { type: "button", class: "btn btn-sm btn-outline-danger" }, ["Delete"]);
     if (me && u.id === me.id) del.disabled = true;
     del.addEventListener("click", () => removeAccount(u));
     const row = el("div", { class: "list-group-item d-flex flex-wrap align-items-center gap-2" }, [
       el("div", { class: "me-auto min-w-0" }, [
         el("div", { class: "fw-semibold text-truncate" }, [u.username]),
-        el("div", { class: "text-secondary small" }, [u.role === "admin" ? "Admin" : "User"]),
+        el("div", { class: "text-secondary small" }, [directory ? who + " · Directory" : who]),
       ]),
-      role,
-      password,
-      setPassword,
-      del,
     ]);
+    if (!directory) {
+      const role = el("select", { class: "form-select form-select-sm w-auto", "aria-label": "Permission for " + u.username }, [
+        accountOption("user", "User", u.role === "user"),
+        accountOption("admin", "Admin", u.role === "admin"),
+      ]);
+      role.addEventListener("change", () => saveRole(u, role));
+      const password = el("input", {
+        class: "form-control form-control-sm account-password",
+        type: "password",
+        autocomplete: "new-password",
+        placeholder: "New password",
+        "aria-label": "New password for " + u.username,
+      });
+      const setPassword = el("button", { type: "button", class: "btn btn-sm btn-outline-secondary" }, ["Set password"]);
+      setPassword.addEventListener("click", () => savePassword(u, password));
+      row.append(role, password, setPassword);
+    }
+    row.append(del);
     const access = accessEditor(u);
     if (access) row.append(access);
     return row;

@@ -28,6 +28,8 @@ var (
 	ErrLastAdmin          = errors.New("last admin")
 	ErrInvalid            = errors.New("invalid")
 	ErrRegistrationClosed = errors.New("registration closed")
+	ErrDirectory          = errors.New("directory unavailable")
+	ErrDirectoryAccount   = errors.New("directory account")
 )
 
 type Store struct {
@@ -92,6 +94,10 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	if err := migrateAccess(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := migrateSource(db); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -185,6 +191,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL,
   all_hosts INTEGER NOT NULL DEFAULT 1,
+  source TEXT NOT NULL DEFAULT 'local',
   created_at INTEGER NOT NULL
 );
 
@@ -390,6 +397,21 @@ func migrateAccess(db *sql.DB) error {
 	}
 	if _, err := db.Exec(`ALTER TABLE users ADD COLUMN all_hosts INTEGER NOT NULL DEFAULT 1`); err != nil {
 		return fmt.Errorf("users.all_hosts: %w", err)
+	}
+	return nil
+}
+
+// migrateSource adds users.source. Accounts created before directory sign-in are local.
+func migrateSource(db *sql.DB) error {
+	has, err := hasColumn(db, "users", "source")
+	if err != nil {
+		return err
+	}
+	if has {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE users ADD COLUMN source TEXT NOT NULL DEFAULT 'local'`); err != nil {
+		return fmt.Errorf("users.source: %w", err)
 	}
 	return nil
 }

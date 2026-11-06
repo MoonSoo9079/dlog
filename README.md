@@ -109,7 +109,8 @@ The console is served by `dlog-server`.
 - Registration turns automatic registration on or off, picks the group new hosts join, and approves a host that registered while that was off.
 - Certificate keeps the shared agent certificate. Generating or replacing it stops new registration until each agent has the new certificate and key. Hosts that already have a token keep sending logs.
 - Groups is where you create, rename, or delete groups. A user sees every host, or only the groups you tick. Hosts with no group stay visible to admins and to users who can see all hosts. Deleting a group removes it from those users, and the hosts in it leave their view.
-- Accounts is where you create accounts and set each one to User or Admin. Setting an account's password signs that account out. Users can read logs. Admins can manage hosts, groups, accounts, and settings. An admin cannot delete the signed-in account or remove the last admin.
+- Accounts is where you create accounts and set each one to User or Admin. Setting an account's password signs that account out. Users can read logs. Admins can manage hosts, groups, accounts, and settings. An admin cannot delete the signed-in account or remove the last admin. A directory account is listed here too. Its password and role come from the directory, and you can still choose which groups it sees or delete the row.
+- Directory turns on sign-in through LDAP. The first successful sign-in creates an account that can see every host. A member of the admin group DN is an admin, and each later sign-in updates that role without changing the groups that account can see. A local account is never replaced, and a wrong local password is not checked against the directory. The bind password is stored with the other settings and is not shown again. Leave it blank when you save to keep it.
 
 Deleting a host deletes its stored logs. The agent will register that hostname again if it still has the certificate and the host was not left disabled. Disable a host to refuse it.
 
@@ -124,15 +125,15 @@ Deleting a host deletes its stored logs. The agent will register that hostname a
 | POST | `/api/v1/register` | agent certificate |
 | POST | `/api/v1/ingest` | host token |
 | POST | `/api/v1/heartbeat` | host token |
-| POST | `/api/v1/login` | username and password, sets the session cookie |
-| GET | `/api/v1/me` | signed-in account. Body is `{"id","username","role","all_hosts","group_ids","created_at"}`. |
-| PATCH | `/api/v1/me` | signed-in account, body `{"current_password","password","sign_out_others"}`. Changes that account's password. `sign_out_others` ends every other session. A wrong current password is 400. |
+| POST | `/api/v1/login` | username and password, sets the session cookie. A local account is checked first. An unknown name, or an account whose source is `directory`, is checked against the directory when that is turned on. The first success creates the account. A wrong password is 401. A directory that cannot be reached is 503 `directory unavailable`. An HTML form then redirects to `/login?error=directory`. |
+| GET | `/api/v1/me` | signed-in account. Body is `{"id","username","role","all_hosts","group_ids","source","created_at"}`. `source` is `local` or `directory`. |
+| PATCH | `/api/v1/me` | signed-in account, body `{"current_password","password","sign_out_others"}`. Changes that account's password. `sign_out_others` ends every other session. A wrong current password is 400. A directory account is 400 `directory account`. |
 | GET | `/api/v1/hosts` | signed-in account. Body is `{"hosts","groups"}`. A user with `all_hosts` sees every host. A user limited to groups sees only those groups and the hosts in them. Each host has `group_id` (`""` when ungrouped), `display_name` (`""` when unset), and `dropped`. |
 | GET | `/api/v1/containers?host_id=` | signed-in account. A host outside the account is 404. |
 | GET | `/api/v1/logs?host_id=&container_id=&stream=&q=&limit=&after_id=&before_id=&since=&until=` | signed-in account. `since` and `until` are RFC3339. A host outside the account is 404. |
 | GET | `/api/v1/admin/users` | admin. Body is `{"users":[...]}`. |
 | POST | `/api/v1/admin/users` | admin, body `{"username","password","role"}`, 201. `role` is `user` or `admin`. |
-| PATCH | `/api/v1/admin/users/{id}` | admin, body `{"role"}` and/or `{"password"}` and/or `{"all_hosts","group_ids"}`. A new password signs that account out. `all_hosts` true sees every host and clears `group_ids`. `all_hosts` false sees only those groups. An empty `group_ids` sees no hosts. |
+| PATCH | `/api/v1/admin/users/{id}` | admin, body `{"role"}` and/or `{"password"}` and/or `{"all_hosts","group_ids"}`. A new password signs that account out. `all_hosts` true sees every host and clears `group_ids`. `all_hosts` false sees only those groups. An empty `group_ids` sees no hosts. Role and password are 400 `directory account` for a directory account. Group scope still applies. |
 | DELETE | `/api/v1/admin/users/{id}` | admin. Refuses the signed-in account and the last admin. |
 | POST | `/api/v1/admin/groups` | admin, body `{"name"}`, 201 |
 | PATCH | `/api/v1/admin/groups/{id}` | admin, body `{"name"}` |
@@ -142,8 +143,8 @@ Deleting a host deletes its stored logs. The agent will register that hostname a
 | PATCH | `/api/v1/admin/hosts/{id}` | admin, body `{"display_name":"Web 01"}` and/or `{"hostname":"new-name"}`. `display_name` of `""` clears it. The hostname is the registration name. Changing it makes the next registration of the old name create another host. |
 | PATCH | `/api/v1/admin/hosts/{id}/group` | admin, body `{"group_id":"grp_…"}`. `""` clears the group. |
 | DELETE | `/api/v1/admin/hosts/{id}` | admin |
-| GET | `/api/v1/admin/settings` | admin. Body is the saved settings plus `pending`, the hostnames waiting for approval. |
-| PATCH | `/api/v1/admin/settings` | admin. Any of `brand_name`, `brand_tagline`, `auto_register`, `default_group_id`, `retention`, `session`, `offline`. `brand_name` of `""` uses Dlog. `default_group_id` of `""` leaves new hosts ungrouped. `retention` of `0` keeps logs. `retention`, `session`, and `offline` use the same duration text as the flags (`7d`, `12h`, `45s`). A session is from 1 hour to 30 days. The offline window is from 30 seconds to 15 minutes. |
+| GET | `/api/v1/admin/settings` | admin. Body is the saved settings plus `pending`, the hostnames waiting for approval. The bind password is omitted. `ldap_bind_password_set` is true when one is stored. |
+| PATCH | `/api/v1/admin/settings` | admin. Any of `brand_name`, `brand_tagline`, `auto_register`, `default_group_id`, `retention`, `session`, `offline`, `ldap_enabled`, `ldap_url`, `ldap_starttls`, `ldap_bind_dn`, `ldap_bind_password`, `ldap_clear_bind_password`, `ldap_base_dn`, `ldap_user_filter`, `ldap_username_attr`, `ldap_admin_group`. `brand_name` of `""` uses Dlog. `default_group_id` of `""` leaves new hosts ungrouped. `retention` of `0` keeps logs. `retention`, `session`, and `offline` use the same duration text as the flags (`7d`, `12h`, `45s`). A session is from 1 hour to 30 days. The offline window is from 30 seconds to 15 minutes. A directory URL is `ldap://` or `ldaps://`, with no user name in it. StartTLS applies only to `ldap://`. The user filter must contain one `%s` and no other `%`. An empty bind password leaves the saved one. `ldap_clear_bind_password: true` removes it. Sending both a new password and clear is 400. When the directory is on, the URL and base DN are required. |
 | POST | `/api/v1/admin/pending/{hostname}/approve` | admin. Creates the host in the default group. The agent gets a token on its next registration. |
 | DELETE | `/api/v1/admin/pending/{hostname}` | admin. Drops a waiting registration. |
 | GET | `/api/v1/admin/certificate` | admin. Fingerprint, subject, validity, and the file paths. The private key is not included. |

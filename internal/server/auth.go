@@ -28,11 +28,34 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		s.loginFail(w, r, http.StatusBadRequest, "bad request")
 		return
 	}
-	acct, err := s.store.Authenticate(username, password)
+	acct, kind, err := s.store.classifyLogin(username, password)
 	if err != nil {
+		slog.Error("login", "err", err)
+		s.loginFail(w, r, http.StatusInternalServerError, "internal error")
+		return
+	}
+	switch kind {
+	case loginOK:
+	case loginRejected:
 		s.login.hit(ip)
 		s.loginFail(w, r, http.StatusUnauthorized, "unauthorized")
 		return
+	default:
+		acct, err = s.directoryAuthenticate(username, password)
+		if err != nil {
+			s.login.hit(ip)
+			if errors.Is(err, ErrDirectory) {
+				s.loginFail(w, r, http.StatusServiceUnavailable, "directory unavailable")
+				return
+			}
+			if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrInvalid) {
+				s.loginFail(w, r, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			slog.Error("directory login", "err", err)
+			s.loginFail(w, r, http.StatusInternalServerError, "internal error")
+			return
+		}
 	}
 	sid, exp, err := s.store.CreateSession(acct.ID, s.sessionLength())
 	if err != nil {
@@ -134,7 +157,11 @@ func (s *Server) loginFail(w http.ResponseWriter, r *http.Request, status int, m
 		writeError(w, status, msg)
 		return
 	}
-	http.Redirect(w, r, "/login?error=1", http.StatusSeeOther)
+	target := "/login?error=1"
+	if status == http.StatusServiceUnavailable {
+		target = "/login?error=directory"
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 func readLogin(w http.ResponseWriter, r *http.Request) (string, string, bool, error) {
