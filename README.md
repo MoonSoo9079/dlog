@@ -72,6 +72,14 @@ docker compose -f deploy/agent-compose.yaml up -d --build
 
 For a private CA, mount the PEM file and set `DLOG_CA_FILE` to that path. Podman works too: point `DLOG_DOCKER_HOST` at the Podman API socket (`unix:///run/podman/podman.sock`, or `$XDG_RUNTIME_DIR/podman/podman.sock` for rootless).
 
+### Published images
+
+`.github/workflows/publish.yml` pushes both images to GitHub Container Registry. A push to `main` or `master` publishes `ghcr.io/<owner>/dlog-server:latest` and `ghcr.io/<owner>/dlog-agent:latest`. This repository's branch is `main`.
+
+A version tag publishes those images under that version. `v0.1.0` and `0.1.0` both publish `:0.1.0`. A tag that starts with `v` also publishes that exact name, so `:v0.1.0` works. The server and the agent report the closest reachable version tag, without a leading `v`. A checkout with no version tag reports `0.1.0`.
+
+`<owner>` is the GitHub user or organization, in lowercase. The first push creates the packages. A private repository keeps them private until you change the package visibility. Pulls of a private package need a GitHub token with `read:packages`.
+
 ## What the agent collects
 
 On startup the agent lists running containers and logs the names it will follow and the names it will skip. It lists again every 30 seconds so a container missed by Docker events is still followed, and it logs that list only when the set changes. It also watches Docker events so a new container is followed without waiting for the next list. For each container it calls the Docker log API with `follow`, `stdout`, `stderr`, and `timestamps`, starting from the saved cursor or from `DLOG_SINCE` (default 10 minutes) the first time. The API version is the one the daemon advertises. Docker 29 rejects older clients, including a hardcoded `/v1.41`.
@@ -206,5 +214,6 @@ internal/agent      Docker log follower and shipper
 internal/agentcred  shared agent certificate
 internal/protocol   JSON contract
 deploy/             images and the agent-only compose file
+.github/workflows   publish images to ghcr.io
 compose.yaml        local server, agent, and a logger
 ```

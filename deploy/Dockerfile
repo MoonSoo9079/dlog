@@ -1,10 +1,13 @@
 FROM golang:1.27-alpine AS build
+RUN apk add --no-cache git
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/dlog-server ./cmd/server \
- && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/dlog-agent ./cmd/agent
+RUN set -eu; \
+    ver=$(sh internal/version/closest.sh); \
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X dlog/internal/version.Version=${ver}" -o /out/dlog-server ./cmd/server \
+ && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X dlog/internal/version.Version=${ver}" -o /out/dlog-agent ./cmd/agent
 
 FROM alpine:3.22 AS server
 RUN apk add --no-cache ca-certificates su-exec \

@@ -1,9 +1,9 @@
 bin
 data
-.git
 *.db
 *.db-wal
 *.db-shm
 admin.token
-state.json
+admin.password
 agent.key
+state.json
