@@ -69,6 +69,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/admin/hosts/{id}", s.adminJSON(s.handleDeleteHost))
 	mux.HandleFunc("GET /api/v1/admin/settings", s.adminJSON(s.handleGetSettings))
 	mux.HandleFunc("PATCH /api/v1/admin/settings", s.adminJSON(s.handleUpdateSettings))
+	mux.HandleFunc("POST /api/v1/admin/directory/test", s.adminJSON(s.handleTestDirectory))
 	mux.HandleFunc("POST /api/v1/admin/pending/{hostname}/approve", s.adminJSON(s.handleApprovePending))
 	mux.HandleFunc("DELETE /api/v1/admin/pending/{hostname}", s.adminJSON(s.handleDismissPending))
 	mux.HandleFunc("GET /api/v1/admin/certificate", s.adminJSON(s.handleCertificate))

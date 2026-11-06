@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -123,38 +124,15 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		cfg.OfflineMS = d.Milliseconds()
 	}
-	if body.LDAPBindPassword != nil && *body.LDAPBindPassword != "" && body.LDAPClearBindPassword != nil && *body.LDAPClearBindPassword {
-		writeError(w, http.StatusBadRequest, "cannot set and clear the bind password")
+	if msg := applyDirectory(&cfg, directoryInput{
+		LDAPEnabled: body.LDAPEnabled, LDAPURL: body.LDAPURL, LDAPStartTLS: body.LDAPStartTLS,
+		LDAPBindDN: body.LDAPBindDN, LDAPBindPassword: body.LDAPBindPassword,
+		LDAPClearBindPassword: body.LDAPClearBindPassword, LDAPBaseDN: body.LDAPBaseDN,
+		LDAPUserFilter: body.LDAPUserFilter, LDAPUsernameAttr: body.LDAPUsernameAttr,
+		LDAPAdminGroup: body.LDAPAdminGroup,
+	}); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
-	}
-	if body.LDAPEnabled != nil {
-		cfg.LDAPEnabled = *body.LDAPEnabled
-	}
-	if body.LDAPURL != nil {
-		cfg.LDAPURL = *body.LDAPURL
-	}
-	if body.LDAPStartTLS != nil {
-		cfg.LDAPStartTLS = *body.LDAPStartTLS
-	}
-	if body.LDAPBindDN != nil {
-		cfg.LDAPBindDN = *body.LDAPBindDN
-	}
-	if body.LDAPBaseDN != nil {
-		cfg.LDAPBaseDN = *body.LDAPBaseDN
-	}
-	if body.LDAPUserFilter != nil {
-		cfg.LDAPUserFilter = *body.LDAPUserFilter
-	}
-	if body.LDAPUsernameAttr != nil {
-		cfg.LDAPUsernameAttr = *body.LDAPUsernameAttr
-	}
-	if body.LDAPAdminGroup != nil {
-		cfg.LDAPAdminGroup = *body.LDAPAdminGroup
-	}
-	if body.LDAPClearBindPassword != nil && *body.LDAPClearBindPassword {
-		cfg.LDAPBindPassword = ""
-	} else if body.LDAPBindPassword != nil && *body.LDAPBindPassword != "" {
-		cfg.LDAPBindPassword = *body.LDAPBindPassword
 	}
 	if msg := normalizeDirectory(&cfg); msg != "" {
 		writeError(w, http.StatusBadRequest, msg)
@@ -165,6 +143,93 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeSettings(w)
+}
+
+type directoryInput struct {
+	LDAPEnabled           *bool   `json:"ldap_enabled"`
+	LDAPURL               *string `json:"ldap_url"`
+	LDAPStartTLS          *bool   `json:"ldap_starttls"`
+	LDAPBindDN            *string `json:"ldap_bind_dn"`
+	LDAPBindPassword      *string `json:"ldap_bind_password"`
+	LDAPClearBindPassword *bool   `json:"ldap_clear_bind_password"`
+	LDAPBaseDN            *string `json:"ldap_base_dn"`
+	LDAPUserFilter        *string `json:"ldap_user_filter"`
+	LDAPUsernameAttr      *string `json:"ldap_username_attr"`
+	LDAPAdminGroup        *string `json:"ldap_admin_group"`
+}
+
+func applyDirectory(cfg *Settings, in directoryInput) string {
+	if in.LDAPBindPassword != nil && *in.LDAPBindPassword != "" && in.LDAPClearBindPassword != nil && *in.LDAPClearBindPassword {
+		return "cannot set and clear the bind password"
+	}
+	if in.LDAPEnabled != nil {
+		cfg.LDAPEnabled = *in.LDAPEnabled
+	}
+	if in.LDAPURL != nil {
+		cfg.LDAPURL = *in.LDAPURL
+	}
+	if in.LDAPStartTLS != nil {
+		cfg.LDAPStartTLS = *in.LDAPStartTLS
+	}
+	if in.LDAPBindDN != nil {
+		cfg.LDAPBindDN = *in.LDAPBindDN
+	}
+	if in.LDAPBaseDN != nil {
+		cfg.LDAPBaseDN = *in.LDAPBaseDN
+	}
+	if in.LDAPUserFilter != nil {
+		cfg.LDAPUserFilter = *in.LDAPUserFilter
+	}
+	if in.LDAPUsernameAttr != nil {
+		cfg.LDAPUsernameAttr = *in.LDAPUsernameAttr
+	}
+	if in.LDAPAdminGroup != nil {
+		cfg.LDAPAdminGroup = *in.LDAPAdminGroup
+	}
+	if in.LDAPClearBindPassword != nil && *in.LDAPClearBindPassword {
+		cfg.LDAPBindPassword = ""
+	} else if in.LDAPBindPassword != nil && *in.LDAPBindPassword != "" {
+		cfg.LDAPBindPassword = *in.LDAPBindPassword
+	}
+	return ""
+}
+
+func (s *Server) handleTestDirectory(w http.ResponseWriter, r *http.Request) {
+	var body directoryInput
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, statusForDecode(err), "bad request")
+		return
+	}
+	cfg := s.store.settingsSnapshot()
+	if msg := applyDirectory(&cfg, body); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	if msg := normalizeDirectory(&cfg); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	if cfg.LDAPURL == "" || cfg.LDAPBaseDN == "" {
+		writeError(w, http.StatusBadRequest, "directory url and base are required")
+		return
+	}
+	if err := probeDirectory(cfg); err != nil {
+		switch {
+		case errors.Is(err, errDirectoryConnect):
+			writeError(w, http.StatusServiceUnavailable, "could not connect")
+		case errors.Is(err, errDirectoryBind):
+			writeError(w, http.StatusBadRequest, "bind failed")
+		case errors.Is(err, errDirectoryBase):
+			writeError(w, http.StatusBadRequest, "base DN was not found")
+		case errors.Is(err, errDirectoryGroup):
+			writeError(w, http.StatusBadRequest, "admin group was not found")
+		default:
+			slog.Warn("directory test", "err", err)
+			writeError(w, http.StatusServiceUnavailable, "directory unavailable")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) handleApprovePending(w http.ResponseWriter, r *http.Request) {

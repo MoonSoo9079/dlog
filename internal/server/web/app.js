@@ -590,10 +590,52 @@ function initAdmin() {
       toast(err.message);
     }
   });
-  directoryForm.addEventListener("input", () => { directoryDirty = true; });
-  directoryForm.addEventListener("change", () => { directoryDirty = true; });
+  directoryForm.addEventListener("input", () => { directoryDirty = true; hideDirectoryTest(); });
+  directoryForm.addEventListener("change", () => { directoryDirty = true; hideDirectoryTest(); });
   directoryForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    try {
+      const data = await api("/api/v1/admin/settings", { method: "PATCH", body: JSON.stringify(directoryBody()) });
+      directoryDirty = false;
+      fillSettings(data);
+      paintDirectory(data);
+      toast("Settings saved");
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+  document.getElementById("test-directory").addEventListener("click", async () => {
+    const button = document.getElementById("test-directory");
+    const result = document.getElementById("directory-test-result");
+    button.disabled = true;
+    const label = button.textContent;
+    button.textContent = "Testing...";
+    result.hidden = true;
+    result.textContent = "";
+    try {
+      await api("/api/v1/admin/directory/test", { method: "POST", body: JSON.stringify(directoryBody()) });
+      result.classList.remove("text-danger");
+      result.classList.add("text-success");
+      result.textContent = "Connected to the directory.";
+      result.hidden = false;
+    } catch (err) {
+      result.classList.remove("text-success");
+      result.classList.add("text-danger");
+      result.textContent = err.message;
+      result.hidden = false;
+    } finally {
+      button.disabled = false;
+      button.textContent = label;
+    }
+  });
+  document.getElementById("generate-cert").addEventListener("click", generateCert);
+  document.getElementById("replace-cert").addEventListener("submit", replaceCert);
+  loadFleet(true);
+  loadSettings();
+  setInterval(() => { if (!document.hidden) loadFleet(false); }, 5000);
+  setInterval(() => { if (!document.hidden) loadSettings(); }, 5000);
+
+  function directoryBody() {
     const body = {
       ldap_enabled: document.getElementById("ldap-enabled").checked,
       ldap_url: document.getElementById("ldap-url").value.trim(),
@@ -607,22 +649,14 @@ function initAdmin() {
     const secret = document.getElementById("ldap-bind-password").value;
     if (secret) body.ldap_bind_password = secret;
     if (document.getElementById("ldap-clear-bind").checked) body.ldap_clear_bind_password = true;
-    try {
-      const data = await api("/api/v1/admin/settings", { method: "PATCH", body: JSON.stringify(body) });
-      directoryDirty = false;
-      fillSettings(data);
-      paintDirectory(data);
-      toast("Settings saved");
-    } catch (err) {
-      toast(err.message);
-    }
-  });
-  document.getElementById("generate-cert").addEventListener("click", generateCert);
-  document.getElementById("replace-cert").addEventListener("submit", replaceCert);
-  loadFleet(true);
-  loadSettings();
-  setInterval(() => { if (!document.hidden) loadFleet(false); }, 5000);
-  setInterval(() => { if (!document.hidden) loadSettings(); }, 5000);
+    return body;
+  }
+
+  function hideDirectoryTest() {
+    const result = document.getElementById("directory-test-result");
+    result.hidden = true;
+    result.textContent = "";
+  }
 
   function sectionFromHash() {
     const name = location.hash.replace(/^#/, "");

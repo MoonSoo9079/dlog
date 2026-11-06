@@ -140,6 +140,14 @@ func (d *testDirectory) onSearch(w *gldap.ResponseWriter, r *gldap.Request) {
 	if err != nil {
 		return
 	}
+	if msg.Scope == gldap.BaseObject && strings.EqualFold(msg.BaseDN, peopleBase) {
+		resp.SetResultCode(gldap.ResultSuccess)
+		w.Write(r.NewSearchResponseEntry(peopleBase))
+		return
+	}
+	if msg.Scope == gldap.BaseObject && !strings.EqualFold(msg.BaseDN, adminGroupDN) {
+		return
+	}
 	if msg.Scope == gldap.BaseObject && strings.EqualFold(msg.BaseDN, adminGroupDN) {
 		resp.SetResultCode(gldap.ResultSuccess)
 		d.mu.Lock()
@@ -506,5 +514,145 @@ func TestNobodyLoginDoesNotCreate(t *testing.T) {
 		if acct.Username == "nobody" {
 			t.Fatalf("created nobody: %+v", acct)
 		}
+	}
+}
+
+func TestDirectoryProbe(t *testing.T) {
+	dir := startDirectory(t)
+	ts, _, _ := testServer(t)
+	client := noRedirect(t)
+	admin := login(t, client, ts.URL, "admin", testAdminPassword)
+
+	res := do(t, client, http.MethodGet, ts.URL+"/admin", admin, "")
+	page := readBody(t, res)
+	if res.StatusCode != http.StatusOK || !strings.Contains(page, `id="test-directory"`) || !strings.Contains(page, "Test connection") {
+		t.Fatalf("directory test button: %d", res.StatusCode)
+	}
+
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/users", admin, `{"username":"reader","password":"reader-password","role":"user"}`)
+	body := readBody(t, res)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create reader: %d %s", res.StatusCode, body)
+	}
+	reader := login(t, client, ts.URL, "reader", "reader-password")
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/directory/test", reader, `{"ldap_url":"`+dir.url+`","ldap_base_dn":"`+peopleBase+`"}`)
+	body = readBody(t, res)
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("reader probe: %d %s", res.StatusCode, body)
+	}
+
+	probe := func(payload map[string]any) (int, string) {
+		t.Helper()
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res := do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/directory/test", admin, string(raw))
+		return res.StatusCode, readBody(t, res)
+	}
+	good := map[string]any{
+		"ldap_enabled":       false,
+		"ldap_url":           dir.url,
+		"ldap_bind_dn":       readerDN,
+		"ldap_bind_password": readerSecret,
+		"ldap_base_dn":       peopleBase,
+		"ldap_admin_group":   adminGroupDN,
+	}
+	code, body := probe(good)
+	if code != http.StatusOK || !strings.Contains(body, `"ok":true`) || strings.Contains(body, readerSecret) {
+		t.Fatalf("probe: %d %s", code, body)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/admin/settings", admin, "")
+	saved := readBody(t, res)
+	if res.StatusCode != http.StatusOK || !strings.Contains(saved, `"ldap_enabled":false`) || strings.Contains(saved, dir.url) {
+		t.Fatalf("probe saved settings: %s", saved)
+	}
+
+	raw, err := json.Marshal(good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res = patchSettings(t, client, ts.URL, admin, string(raw))
+	body = readBody(t, res)
+	if res.StatusCode != http.StatusOK || !strings.Contains(body, `"ldap_bind_password_set":true`) || strings.Contains(body, readerSecret) {
+		t.Fatalf("save directory: %d %s", res.StatusCode, body)
+	}
+	code, body = probe(map[string]any{
+		"ldap_url":     dir.url,
+		"ldap_bind_dn": readerDN,
+		"ldap_base_dn": peopleBase,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("saved password probe: %d %s", code, body)
+	}
+	code, body = probe(map[string]any{
+		"ldap_url":           dir.url,
+		"ldap_bind_dn":       readerDN,
+		"ldap_bind_password": "wrong-secret",
+		"ldap_base_dn":       peopleBase,
+	})
+	if code != http.StatusBadRequest || !strings.Contains(body, "bind failed") {
+		t.Fatalf("bad bind: %d %s", code, body)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/admin/settings", admin, "")
+	saved = readBody(t, res)
+	if !strings.Contains(saved, `"ldap_bind_password_set":true`) || !strings.Contains(saved, dir.url) {
+		t.Fatalf("bad probe changed settings: %s", saved)
+	}
+	code, body = probe(map[string]any{
+		"ldap_url":     dir.url,
+		"ldap_bind_dn": readerDN,
+		"ldap_base_dn": "dc=missing,dc=example,dc=org",
+	})
+	if code != http.StatusBadRequest || !strings.Contains(body, "base DN was not found") {
+		t.Fatalf("missing base: %d %s", code, body)
+	}
+	code, body = probe(map[string]any{
+		"ldap_url":         dir.url,
+		"ldap_bind_dn":     readerDN,
+		"ldap_base_dn":     peopleBase,
+		"ldap_admin_group": "cn=missing,ou=groups,dc=example,dc=org",
+	})
+	if code != http.StatusBadRequest || !strings.Contains(body, "admin group was not found") {
+		t.Fatalf("missing group: %d %s", code, body)
+	}
+	code, body = probe(map[string]any{
+		"ldap_url":     dir.url,
+		"ldap_base_dn": peopleBase,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("anonymous probe: %d %s", code, body)
+	}
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := lis.Addr().String()
+	if err := lis.Close(); err != nil {
+		t.Fatal(err)
+	}
+	code, body = probe(map[string]any{
+		"ldap_url":     "ldap://" + closed,
+		"ldap_base_dn": peopleBase,
+	})
+	if code != http.StatusServiceUnavailable || !strings.Contains(body, "could not connect") {
+		t.Fatalf("closed directory: %d %s", code, body)
+	}
+	code, body = probe(map[string]any{
+		"ldap_url":     "http://ldap.example.com",
+		"ldap_base_dn": peopleBase,
+	})
+	if code != http.StatusBadRequest || !strings.Contains(body, "invalid directory url") {
+		t.Fatalf("bad url: %d %s", code, body)
+	}
+	code, body = probe(map[string]any{
+		"ldap_url":                 dir.url,
+		"ldap_base_dn":             peopleBase,
+		"ldap_bind_password":       readerSecret,
+		"ldap_clear_bind_password": true,
+	})
+	if code != http.StatusBadRequest || !strings.Contains(body, "cannot set and clear the bind password") {
+		t.Fatalf("set and clear: %d %s", code, body)
 	}
 }

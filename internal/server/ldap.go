@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/tls"
+	"errors"
 	"log/slog"
 	"net"
 	"net/url"
@@ -12,6 +13,13 @@ import (
 )
 
 const directoryTimeout = 8 * time.Second
+
+var (
+	errDirectoryConnect = errors.New("could not connect")
+	errDirectoryBind    = errors.New("bind failed")
+	errDirectoryBase    = errors.New("base DN was not found")
+	errDirectoryGroup   = errors.New("admin group was not found")
+)
 
 // directoryAuthenticate checks the configured directory and stores the account.
 // An empty password is refused before any bind. A directory that cannot be
@@ -72,6 +80,64 @@ func lookupDirectory(cfg Settings, username, password string) (string, bool, err
 		admin = member
 	}
 	return name, admin, nil
+}
+
+// probeDirectory dials the directory, binds when a bind DN is set, and reads
+// the base DN. An admin group DN is read the same way. Nothing is saved.
+func probeDirectory(cfg Settings) error {
+	conn, err := dialDirectory(cfg)
+	if err != nil {
+		slog.Warn("directory dial", "err", err)
+		return errDirectoryConnect
+	}
+	defer conn.Close()
+	if cfg.LDAPBindDN != "" {
+		if cfg.LDAPBindPassword == "" {
+			return errDirectoryBind
+		}
+		if err := conn.Bind(cfg.LDAPBindDN, cfg.LDAPBindPassword); err != nil {
+			if ldap.IsErrorWithCode(err, ldap.LDAPResultInvalidCredentials) {
+				return errDirectoryBind
+			}
+			slog.Warn("directory bind", "err", err)
+			return ErrDirectory
+		}
+	}
+	if err := directoryEntryExists(conn, cfg.LDAPBaseDN); err != nil {
+		return err
+	}
+	if cfg.LDAPAdminGroup == "" {
+		return nil
+	}
+	if err := directoryEntryExists(conn, cfg.LDAPAdminGroup); err != nil {
+		if errors.Is(err, errDirectoryBase) {
+			return errDirectoryGroup
+		}
+		return err
+	}
+	return nil
+}
+
+func directoryEntryExists(conn *ldap.Conn, dn string) error {
+	req := ldap.NewSearchRequest(
+		dn,
+		ldap.ScopeBaseObject,
+		ldap.NeverDerefAliases,
+		1,
+		int(directoryTimeout.Seconds()),
+		false,
+		"(objectClass=*)",
+		[]string{"objectClass"},
+		nil,
+	)
+	if _, err := conn.Search(req); err != nil {
+		if ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject) {
+			return errDirectoryBase
+		}
+		slog.Warn("directory probe", "err", err)
+		return ErrDirectory
+	}
+	return nil
 }
 
 func dialDirectory(cfg Settings) (*ldap.Conn, error) {

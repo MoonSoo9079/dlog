@@ -242,7 +242,12 @@
               <input id="ldap-admin-group" class="form-control" autocomplete="off" spellcheck="false" placeholder="cn=admins,ou=groups,dc=example,dc=org">
             </div>
             <p class="text-secondary small mt-2">Leave the bind DN blank to search without a bind. Leave the admin group blank and every directory account is a user.</p>
-            <button type="submit" class="btn btn-warning mt-3">Save</button>
+            <p class="text-secondary small mt-3 mb-2">Test connection checks this form and does not save it. A blank bind password uses the saved one.</p>
+            <div>
+              <button type="submit" class="btn btn-warning">Save</button>
+              <button type="button" id="test-directory" class="btn btn-outline-secondary ms-2">Test connection</button>
+            </div>
+            <p id="directory-test-result" class="small mt-2" role="status" hidden></p>
           </form>
         </section>
       </div>

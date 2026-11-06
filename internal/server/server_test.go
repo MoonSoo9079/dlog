@@ -822,7 +822,7 @@ func TestSettingsRegistrationAndCertificate(t *testing.T) {
 	res = do(t, client, http.MethodGet, ts.URL+"/admin", admin, "")
 	page, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != http.StatusOK || !strings.Contains(string(page), "Automatic registration") || !strings.Contains(string(page), `id="panel-registration"`) || !strings.Contains(string(page), `id="panel-certificate"`) || !strings.Contains(string(page), `id="accounts"`) || !strings.Contains(string(page), `id="create-group"`) {
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(page), "Automatic registration") || !strings.Contains(string(page), `id="panel-registration"`) || !strings.Contains(string(page), `id="panel-certificate"`) || !strings.Contains(string(page), `id="accounts"`) || !strings.Contains(string(page), `id="create-group"`) || !strings.Contains(string(page), `id="test-directory"`) {
 		t.Fatalf("settings page: %d", res.StatusCode)
 	}
 
