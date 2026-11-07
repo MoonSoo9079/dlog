@@ -39,6 +39,12 @@ function initApp() {
   const hostQEl = document.getElementById("host-q");
   const chipsEl = document.getElementById("chips");
   const logEl = document.getElementById("log");
+  // Rows live in #log. The parent scroller keeps the column header sticky
+  // and the same width as the rows, scrollbar included.
+  const scroller = document.getElementById("log-scroll");
+  const emptyEl = document.getElementById("log-empty");
+  const emptyTitle = emptyEl ? emptyEl.querySelector("[data-empty-title]") : null;
+  const emptyHint = emptyEl ? emptyEl.querySelector("[data-empty-hint]") : null;
   const metaEl = document.getElementById("logmeta");
   const qInput = document.getElementById("q");
   const streamSel = document.getElementById("stream");
@@ -64,9 +70,7 @@ function initApp() {
   });
   followBtn.addEventListener("click", () => {
     follow = !follow;
-    followBtn.classList.toggle("on", follow);
-    followBtn.classList.toggle("btn-warning", follow);
-    followBtn.classList.toggle("btn-outline-secondary", !follow);
+    followBtn.classList.toggle("is-on", follow);
     followBtn.setAttribute("aria-pressed", follow ? "true" : "false");
   });
   document.getElementById("older").addEventListener("click", loadOlder);
@@ -85,7 +89,7 @@ function initApp() {
     if (range === "from") reload();
   });
   document.addEventListener("selectionchange", () => {
-    logEl.style.overflowAnchor = selectingLog() ? "none" : "";
+    (scroller || logEl).style.overflowAnchor = selectingLog() ? "none" : "";
   });
   let qTimer = 0;
   qInput.addEventListener("input", () => {
@@ -194,9 +198,9 @@ function initApp() {
       const msg = scoped
         ? "No hosts in your groups."
         : "No hosts yet. Start an agent with the shared certificate and it will register itself.";
-      hostsEl.append(el("p", { class: "text-secondary small px-3 py-2 mb-0" }, [msg]));
+      hostsEl.append(el("p", { class: "px-4 py-6 text-[13px] leading-relaxed text-slate-400" }, [msg]));
     } else if (!visible.length && !showedGroup) {
-      hostsEl.append(el("p", { class: "text-secondary small px-3 py-2 mb-0" }, ["No matching hosts."]));
+      hostsEl.append(el("p", { class: "px-4 py-6 text-[13px] leading-relaxed text-slate-400" }, ["No matching hosts."]));
     }
   }
 
@@ -225,29 +229,33 @@ function initApp() {
   function groupLabel(name, count, loose, key, open) {
     return el("button", {
       type: "button",
-      class: "host-group d-flex justify-content-between align-items-baseline" + (loose ? " is-loose" : "") + (open ? "" : " is-collapsed"),
+      class: "host-group flex w-full cursor-pointer items-center justify-between gap-3 px-4 pb-1 pt-5 text-left text-slate-400 transition-colors duration-150 ease-in-out hover:text-slate-200" + (loose ? " is-loose" : "") + (open ? "" : " is-collapsed"),
       "aria-expanded": open ? "true" : "false",
       onclick: () => toggleGroup(key),
     }, [
-      el("span", { class: "d-flex align-items-center gap-2 min-w-0" }, [
-        el("span", { class: "chevron", "aria-hidden": "true" }),
-        el("span", { class: "label text-truncate" }, [name]),
+      el("span", { class: "flex min-w-0 items-center gap-2" }, [
+        iconChevron(),
+        el("span", { class: "label truncate text-[11px] font-medium uppercase tracking-[0.14em]" }, [name]),
       ]),
-      el("span", { class: "count" }, [String(count)]),
+      el("span", { class: "count font-mono text-[11px] tabular-nums text-slate-500" }, [String(count)]),
     ]);
   }
 
   function hostButton(h) {
-    const dotClass = h.status !== "enabled" ? "dot off" : (h.online ? "dot on" : "dot");
+    const dotClass = h.status !== "enabled" ? "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-status-down" : (h.online ? "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-status-on" : "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-status-off");
+    const rowClass = h.id === hostId
+      ? "flex w-full cursor-pointer items-start gap-3 border-l-2 border-amber-500 bg-amber-500/[0.08] px-4 py-2.5 text-left transition-colors duration-150 ease-in-out"
+      : "flex w-full cursor-pointer items-start gap-3 border-l-2 border-transparent px-4 py-2.5 text-left transition-colors duration-150 ease-in-out hover:bg-white/[0.03]";
     return el("button", {
       type: "button",
-      class: "list-group-item list-group-item-action host d-flex gap-2 text-start" + (h.id === hostId ? " active" : ""),
+      class: rowClass,
+      title: hostDetail(h),
       onclick: () => selectHost(h.id),
     }, [
-      el("span", { class: dotClass }),
-      el("span", { class: "min-w-0" }, [
-        el("span", { class: "d-block fw-semibold name text-truncate" }, [hostLabel(h)]),
-        el("span", { class: "d-block small sub opacity-75" }, [hostDetail(h)]),
+      el("span", { class: dotClass, "aria-hidden": "true" }),
+      el("span", { class: "min-w-0 flex-1" }, [
+        el("span", { class: "block truncate text-[13px] font-medium leading-5 text-slate-200" }, [hostLabel(h)]),
+        el("span", { class: "mt-0.5 block font-mono text-[11px] leading-4 text-slate-400" }, [hostDetail(h)]),
       ]),
     ]);
   }
@@ -272,9 +280,13 @@ function initApp() {
   }
 
   function chip(id, label, selected, exited) {
+    const tone = selected
+      ? "relative z-10 border-amber-500 bg-amber-500 text-[#1c1408]"
+      : "border-ink-edge bg-ink-field text-slate-300 hover:border-slate-500 hover:text-slate-100";
     return el("button", {
       type: "button",
-      class: "btn btn-sm rounded-pill text-nowrap " + (selected ? "btn-warning" : "btn-outline-secondary") + (exited ? " opacity-50" : ""),
+      class: "h-8 max-w-[16rem] shrink-0 cursor-pointer truncate border px-3 text-[12px] font-medium transition-colors duration-150 ease-in-out " + tone + (exited ? " opacity-50" : ""),
+      title: label,
       onclick: () => {
         containerId = id;
         paintChips();
@@ -339,7 +351,7 @@ function initApp() {
   async function loadOlder() {
     if (!hostId || !lines.length) { toast("No older lines"); return; }
     const my = gen;
-    const prevHeight = logEl.scrollHeight;
+    const prevHeight = view().scrollHeight;
     try {
       const data = await api(logURL({ before_id: String(lines[0].id) }));
       if (my !== gen) return;
@@ -351,9 +363,14 @@ function initApp() {
     }
   }
 
+  function view() {
+    return scroller || logEl;
+  }
+
   function pinBottom() {
-    const top = Math.max(0, logEl.scrollHeight - logEl.clientHeight);
-    if (logEl.scrollTop !== top) logEl.scrollTop = top;
+    const node = view();
+    const top = Math.max(0, node.scrollHeight - node.clientHeight);
+    if (node.scrollTop !== top) node.scrollTop = top;
   }
 
   function sameLineIds(want) {
@@ -378,8 +395,9 @@ function initApp() {
       wantSet.add(id);
     }
     const changed = !sameLineIds(want);
+    const node = view();
     const manageScroll = changed && !!(opts.stick || opts.anchorHeight != null);
-    if (manageScroll) logEl.style.overflowAnchor = "none";
+    if (manageScroll) node.style.overflowAnchor = "none";
     if (changed) {
       const stale = [];
       for (const node of logEl.children) {
@@ -407,12 +425,27 @@ function initApp() {
     }
     const label = hostId ? (lines.length ? lineLabel(lines.length) : "No lines") : "Select a host";
     if (metaEl.textContent !== label) metaEl.textContent = label;
+    paintEmpty();
     if (opts.stick) pinBottom();
     else if (opts.anchorHeight != null) {
-      const top = logEl.scrollHeight - opts.anchorHeight;
-      if (logEl.scrollTop !== top) logEl.scrollTop = top;
+      const top = node.scrollHeight - opts.anchorHeight;
+      if (node.scrollTop !== top) node.scrollTop = top;
     }
-    if (manageScroll) logEl.style.overflowAnchor = selectingLog() ? "none" : "";
+    if (manageScroll) node.style.overflowAnchor = selectingLog() ? "none" : "";
+  }
+
+  function paintEmpty() {
+    if (!emptyEl) return;
+    const show = lines.length === 0;
+    emptyEl.hidden = !show;
+    if (!show || !emptyTitle || !emptyHint) return;
+    if (hostId) {
+      emptyTitle.textContent = "No lines in this view";
+      emptyHint.textContent = "The container, stream, and time filters all apply. Older loads the previous page.";
+    } else {
+      emptyTitle.textContent = "Select a host";
+      emptyHint.textContent = "Hosts appear after an agent registers with the shared certificate.";
+    }
   }
 
   function selectingLog() {
@@ -461,23 +494,32 @@ function hostDetail(h) {
   return parts.join(" · ");
 }
 
+const btnBase = "inline-flex h-8 shrink-0 cursor-pointer items-center rounded-md px-3 text-[12px] font-medium transition-colors duration-150 ease-in-out disabled:cursor-default disabled:opacity-40";
+const btnPrimary = btnBase + " border border-amber-500 bg-amber-500 text-[#1c1408] hover:bg-amber-400";
+const btnGhost = btnBase + " border border-ink-edge bg-ink-field text-slate-300 hover:border-slate-500 hover:text-slate-100";
+const btnDanger = btnBase + " border border-status-down bg-transparent text-clay hover:bg-status-down/10";
+const btnQuiet = btnBase + " border border-amber-500/50 bg-transparent text-amber-300 hover:bg-amber-500/10";
+const btnOk = btnBase + " border border-status-on/60 bg-transparent text-status-on hover:bg-status-on/10";
+const fieldBox = "h-8 rounded-md border border-ink-edge bg-ink-field px-2.5 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none";
+const selectCls = "ui-select h-8 cursor-pointer rounded-md border border-ink-edge bg-ink-field pl-2.5 pr-8 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out hover:border-slate-500 focus:border-amber-500/70 focus:outline-none";
+const emptyRow = "px-1 py-6 text-[13px] text-slate-400";
+
 function statusBadge(h) {
-  if (h.status !== "enabled") return el("span", { class: "badge text-bg-danger" }, ["disabled"]);
-  if (h.online) return el("span", { class: "badge text-bg-success" }, ["online"]);
-  return el("span", { class: "badge text-bg-secondary" }, ["offline"]);
+  if (h.status !== "enabled") return el("span", { class: "font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-clay" }, ["disabled"]);
+  if (h.online) return el("span", { class: "font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-status-on" }, ["online"]);
+  return el("span", { class: "font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500" }, ["offline"]);
 }
 
 function lineNode(ln) {
-  const streamClass = ln.stream === "stderr" ? "text-bg-danger" : "text-bg-secondary";
+  const stderr = ln.stream === "stderr";
   return el("div", {
-    class: "log-line" + (ln.stream === "stderr" ? " stderr" : ""),
-    title: ln.image || "",
+    class: "log-line log-cols font-mono text-[12px] transition-colors duration-150 ease-in-out hover:bg-white/[0.03]" + (stderr ? " stderr" : ""),
     "data-id": String(ln.id),
   }, [
-    el("span", { class: "ts" }, [formatTime(ln.timestamp)]),
-    el("span", { class: "name" }, [ln.container_name || ln.container_id]),
-    el("span", { class: "badge " + streamClass }, [ln.stream]),
-    el("span", { class: "msg" }, [ln.message]),
+    el("span", { class: "ts tabular-nums text-slate-400" }, [formatTime(ln.timestamp)]),
+    el("span", { class: "name text-sand" }, [ln.container_name || ln.container_id]),
+    el("span", { class: "stream text-[11px] " + (stderr ? "text-clay" : "text-slate-400") }, [ln.stream]),
+    el("span", { class: "msg " + (stderr ? "text-clay" : "text-slate-200") }, [ln.message]),
   ]);
 }
 
@@ -486,7 +528,7 @@ function lineLabel(n) {
 }
 
 function nearBottom() {
-  const node = document.getElementById("log");
+  const node = document.getElementById("log-scroll") || document.getElementById("log");
   return node.scrollHeight - node.scrollTop - node.clientHeight < 48;
 }
 
@@ -614,13 +656,13 @@ function initAdmin() {
     result.textContent = "";
     try {
       await api("/api/v1/admin/directory/test", { method: "POST", body: JSON.stringify(directoryBody()) });
-      result.classList.remove("text-danger");
-      result.classList.add("text-success");
+      result.classList.remove("text-clay");
+      result.classList.add("text-status-on");
       result.textContent = "Connected to the directory.";
       result.hidden = false;
     } catch (err) {
-      result.classList.remove("text-success");
-      result.classList.add("text-danger");
+      result.classList.remove("text-status-on");
+      result.classList.add("text-clay");
       result.textContent = err.message;
       result.hidden = false;
     } finally {
@@ -709,21 +751,21 @@ function initAdmin() {
     hostList.replaceChildren();
     if (!visible.length) {
       const msg = hosts.length ? "No matching hosts." : "No hosts yet. Start an agent with the shared certificate and it will register itself.";
-      hostList.append(el("div", { class: "list-group-item text-secondary" }, [msg]));
+      hostList.append(el("div", { class: emptyRow }, [msg]));
       return;
     }
     for (const h of visible) hostList.append(hostRow(h));
   }
 
   function hostRow(h) {
-    const row = el("div", { class: "list-group-item admin-host" });
-    const deleteBtn = el("button", { type: "button", class: "btn btn-sm btn-outline-danger" }, ["Delete"]);
+    const row = el("div", { class: "border-b border-ink-line px-1 py-4" });
+    const deleteBtn = el("button", { type: "button", class: btnDanger }, ["Delete"]);
     const statusBtn = h.status === "enabled"
-      ? el("button", { type: "button", class: "btn btn-sm btn-outline-warning" }, ["Disable"])
-      : el("button", { type: "button", class: "btn btn-sm btn-outline-success" }, ["Enable"]);
+      ? el("button", { type: "button", class: btnQuiet }, ["Disable"])
+      : el("button", { type: "button", class: btnOk }, ["Enable"]);
     deleteBtn.addEventListener("click", () => removeHost(h));
     statusBtn.addEventListener("click", () => setStatus(h, h.status === "enabled" ? "disable" : "enable"));
-    const sel = el("select", { class: "form-select form-select-sm admin-group-select", "aria-label": "Group for " + h.hostname });
+    const sel = el("select", { class: selectCls + " w-full max-w-xs", "aria-label": "Group for " + h.hostname });
     const none = el("option", { value: "" }, ["Ungrouped"]);
     if (!h.group_id) none.selected = true;
     sel.append(none);
@@ -734,7 +776,7 @@ function initAdmin() {
     }
     sel.addEventListener("change", () => assignGroup(h, sel.value));
     const nameInput = el("input", {
-      class: "form-control form-control-sm admin-display-name",
+      class: fieldBox + " w-64 max-w-full",
       type: "text",
       maxlength: "64",
       autocomplete: "off",
@@ -743,7 +785,7 @@ function initAdmin() {
       "aria-label": "Display name for " + h.hostname,
     });
     nameInput.value = h.display_name || "";
-    const saveName = el("button", { type: "button", class: "btn btn-sm btn-outline-secondary" }, ["Save name"]);
+    const saveName = el("button", { type: "button", class: btnGhost }, ["Save name"]);
     saveName.addEventListener("click", () => saveDisplayName(h, nameInput.value));
     nameInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -753,14 +795,14 @@ function initAdmin() {
     });
     const meta = h.hostname + " · seen " + ago(h.last_seen_at) + (h.dropped ? " · dropped " + h.dropped : "") + " · " + h.container_count + " containers";
     row.append(
-      el("div", { class: "d-flex flex-wrap align-items-center gap-2" }, [
-        el("span", { class: "fw-semibold text-truncate me-auto" }, [hostLabel(h)]),
+      el("div", { class: "flex flex-wrap items-center gap-2" }, [
+        el("span", { class: "min-w-0 flex-1 truncate text-[14px] font-medium text-slate-100" }, [hostLabel(h)]),
         statusBadge(h),
-        el("div", { class: "btn-group" }, [statusBtn, deleteBtn]),
+        el("div", { class: "flex shrink-0 gap-2" }, [statusBtn, deleteBtn]),
       ]),
-      el("div", { class: "text-secondary small mt-1" }, [meta]),
-      el("div", { class: "d-flex flex-wrap gap-2 my-2" }, [nameInput, saveName]),
-      sel,
+      el("div", { class: "mt-1 font-mono text-[12px] text-slate-500" }, [meta]),
+      el("div", { class: "mt-3 flex flex-wrap items-center gap-2" }, [nameInput, saveName]),
+      el("div", { class: "mt-2" }, [sel]),
     );
     return row;
   }
@@ -768,31 +810,31 @@ function initAdmin() {
   function paintGroups() {
     groupList.replaceChildren();
     if (!groups.length) {
-      groupList.append(el("div", { class: "list-group-item text-secondary" }, ["No groups yet."]));
+      groupList.append(el("div", { class: emptyRow }, ["No groups yet."]));
       return;
     }
     for (const g of groups) groupList.append(groupRow(g));
   }
 
   function groupRow(g) {
-    const row = el("div", { class: "list-group-item d-flex align-items-center gap-2" });
-    const renameBtn = el("button", { type: "button", class: "btn btn-sm btn-outline-secondary" }, ["Rename"]);
-    const deleteBtn = el("button", { type: "button", class: "btn btn-sm btn-outline-danger" }, ["Delete"]);
+    const row = el("div", { class: "flex items-center gap-3 border-b border-ink-line px-1 py-4" });
+    const renameBtn = el("button", { type: "button", class: btnGhost }, ["Rename"]);
+    const deleteBtn = el("button", { type: "button", class: btnDanger }, ["Delete"]);
     renameBtn.addEventListener("click", () => beginRenameGroup(g, row));
     deleteBtn.addEventListener("click", () => deleteGroup(g));
     row.append(
-      el("div", { class: "min-w-0 flex-grow-1" }, [
-        el("div", { class: "fw-semibold text-truncate" }, [g.name]),
-        el("div", { class: "text-secondary small" }, [g.host_count === 1 ? "1 host" : g.host_count + " hosts"]),
+      el("div", { class: "min-w-0 flex-1" }, [
+        el("div", { class: "truncate text-[14px] font-medium text-slate-100" }, [g.name]),
+        el("div", { class: "mt-0.5 text-[12px] text-slate-500" }, [g.host_count === 1 ? "1 host" : g.host_count + " hosts"]),
       ]),
-      el("div", { class: "btn-group flex-shrink-0" }, [renameBtn, deleteBtn]),
+      el("div", { class: "flex shrink-0 gap-2" }, [renameBtn, deleteBtn]),
     );
     return row;
   }
 
   function beginRenameGroup(g, row) {
     const input = el("input", {
-      class: "form-control form-control-sm",
+      class: fieldBox + " min-w-0 flex-1",
       type: "text",
       maxlength: "64",
       autocomplete: "off",
@@ -800,8 +842,8 @@ function initAdmin() {
       "aria-label": "Group name",
     });
     input.value = g.name;
-    const save = el("button", { type: "button", class: "btn btn-sm btn-warning" }, ["Save"]);
-    const cancel = el("button", { type: "button", class: "btn btn-sm btn-outline-secondary" }, ["Cancel"]);
+    const save = el("button", { type: "button", class: btnPrimary }, ["Save"]);
+    const cancel = el("button", { type: "button", class: btnGhost }, ["Cancel"]);
     save.addEventListener("click", () => renameGroup(g, input.value));
     cancel.addEventListener("click", () => paintGroups());
     input.addEventListener("keydown", (e) => {
@@ -813,8 +855,7 @@ function initAdmin() {
         paintGroups();
       }
     });
-    row.replaceChildren(el("div", { class: "d-flex gap-2 w-100" }, [input, save, cancel]));
-    input.classList.add("flex-grow-1");
+    row.replaceChildren(el("div", { class: "flex w-full items-center gap-2" }, [input, save, cancel]));
     input.focus();
     input.select();
   }
@@ -935,20 +976,20 @@ function initAdmin() {
     if (!list) return;
     list.replaceChildren();
     if (!items.length) {
-      list.append(el("div", { class: "list-group-item text-secondary" }, ["No hosts are waiting."]));
+      list.append(el("div", { class: emptyRow }, ["No hosts are waiting."]));
       return;
     }
     for (const item of items) {
-      const approve = el("button", { type: "button", class: "btn btn-sm btn-warning" }, ["Approve"]);
-      const dismiss = el("button", { type: "button", class: "btn btn-sm btn-outline-secondary" }, ["Dismiss"]);
+      const approve = el("button", { type: "button", class: btnPrimary }, ["Approve"]);
+      const dismiss = el("button", { type: "button", class: btnGhost }, ["Dismiss"]);
       approve.addEventListener("click", () => decidePending(item.hostname, "approve"));
       dismiss.addEventListener("click", () => decidePending(item.hostname, "dismiss"));
-      const row = el("div", { class: "list-group-item d-flex flex-wrap align-items-center gap-2" }, [
-        el("div", { class: "me-auto" }, [
-          el("div", { class: "fw-semibold" }, [item.hostname]),
-          el("div", { class: "text-secondary small" }, [item.agent_version ? "agent " + item.agent_version : "agent"]),
+      const row = el("div", { class: "flex flex-wrap items-center gap-3 border-b border-ink-line px-1 py-4" }, [
+        el("div", { class: "min-w-0 flex-1" }, [
+          el("div", { class: "truncate font-mono text-[13px] text-slate-100" }, [item.hostname]),
+          el("div", { class: "mt-0.5 text-[12px] text-slate-500" }, [item.agent_version ? "agent " + item.agent_version : "agent"]),
         ]),
-        el("div", { class: "btn-group" }, [approve, dismiss]),
+        el("div", { class: "flex shrink-0 gap-2" }, [approve, dismiss]),
       ]);
       list.append(row);
     }
@@ -990,13 +1031,13 @@ function initAdmin() {
 
   function showIssuedCert(info) {
     const once = document.getElementById("cert-once");
-    const certBtn = el("button", { type: "button", class: "btn btn-sm btn-outline-light" }, ["Download certificate"]);
-    const keyBtn = el("button", { type: "button", class: "btn btn-sm btn-warning" }, ["Download private key"]);
+    const certBtn = el("button", { type: "button", class: btnGhost }, ["Download certificate"]);
+    const keyBtn = el("button", { type: "button", class: btnPrimary }, ["Download private key"]);
     certBtn.addEventListener("click", () => downloadText("agent.crt", info.cert_pem || ""));
     keyBtn.addEventListener("click", () => downloadText("agent.key", info.key_pem || ""));
     once.replaceChildren(
-      el("p", { class: "text-warning small" }, ["Download the private key now. A later visit to this page does not show it again. The same files are stored on the server."]),
-      el("div", { class: "d-flex flex-wrap gap-2" }, [certBtn, keyBtn]),
+      el("p", { class: "text-[13px] leading-relaxed text-amber-300" }, ["Download the private key now. A later visit to this page does not show it again. The same files are stored on the server."]),
+      el("div", { class: "mt-3 flex flex-wrap gap-2" }, [certBtn, keyBtn]),
     );
     once.hidden = false;
   }
@@ -1104,7 +1145,7 @@ function initAccounts() {
   function paint(users) {
     listEl.replaceChildren();
     if (!users.length) {
-      listEl.append(el("div", { class: "list-group-item text-secondary" }, ["No accounts."]));
+      listEl.append(el("div", { class: emptyRow }, ["No accounts."]));
       return;
     }
     for (const u of users) listEl.append(accountRow(u));
@@ -1113,33 +1154,34 @@ function initAccounts() {
   function accountRow(u) {
     const directory = u.source === "directory";
     const who = u.role === "admin" ? "Admin" : "User";
-    const del = el("button", { type: "button", class: "btn btn-sm btn-outline-danger" }, ["Delete"]);
+    const del = el("button", { type: "button", class: btnDanger }, ["Delete"]);
     if (me && u.id === me.id) del.disabled = true;
     del.addEventListener("click", () => removeAccount(u));
-    const row = el("div", { class: "list-group-item d-flex flex-wrap align-items-center gap-2" }, [
-      el("div", { class: "me-auto min-w-0" }, [
-        el("div", { class: "fw-semibold text-truncate" }, [u.username]),
-        el("div", { class: "text-secondary small" }, [directory ? who + " · Directory" : who]),
+    const head = el("div", { class: "flex flex-wrap items-center gap-2" }, [
+      el("div", { class: "mr-auto min-w-0" }, [
+        el("div", { class: "truncate text-[14px] font-medium text-slate-100" }, [u.username]),
+        el("div", { class: "mt-0.5 text-[12px] text-slate-500" }, [directory ? who + " · Directory" : who]),
       ]),
     ]);
     if (!directory) {
-      const role = el("select", { class: "form-select form-select-sm w-auto", "aria-label": "Permission for " + u.username }, [
+      const role = el("select", { class: selectCls + " w-auto", "aria-label": "Permission for " + u.username }, [
         accountOption("user", "User", u.role === "user"),
         accountOption("admin", "Admin", u.role === "admin"),
       ]);
       role.addEventListener("change", () => saveRole(u, role));
       const password = el("input", {
-        class: "form-control form-control-sm account-password",
+        class: fieldBox + " w-48 max-w-full",
         type: "password",
         autocomplete: "new-password",
         placeholder: "New password",
         "aria-label": "New password for " + u.username,
       });
-      const setPassword = el("button", { type: "button", class: "btn btn-sm btn-outline-secondary" }, ["Set password"]);
+      const setPassword = el("button", { type: "button", class: btnGhost }, ["Set password"]);
       setPassword.addEventListener("click", () => savePassword(u, password));
-      row.append(role, password, setPassword);
+      head.append(role, password, setPassword);
     }
-    row.append(del);
+    head.append(del);
+    const row = el("div", { class: "border-b border-ink-line px-1 py-4" }, [head]);
     const access = accessEditor(u);
     if (access) row.append(access);
     return row;
@@ -1147,30 +1189,30 @@ function initAccounts() {
 
   function accessEditor(u) {
     if (u.role !== "user") return null;
-    const all = el("input", { class: "form-check-input", type: "checkbox" });
+    const all = el("input", { class: "h-3.5 w-3.5 cursor-pointer", type: "checkbox" });
     all.checked = !!u.all_hosts;
     const box = el("div", { class: "account-groups" });
     const selected = new Set(u.group_ids || []);
     if (!groups.length) {
-      box.append(el("span", { class: "text-secondary small" }, ["No groups yet."]));
+      box.append(el("span", { class: "text-[12px] text-slate-500" }, ["No groups yet."]));
     }
     for (const g of groups) {
-      const input = el("input", { class: "form-check-input", type: "checkbox", value: g.id });
+      const input = el("input", { class: "h-3.5 w-3.5 cursor-pointer", type: "checkbox", value: g.id });
       input.checked = selected.has(g.id);
-      box.append(el("label", { class: "form-check form-check-inline mb-0" }, [
+      box.append(el("label", { class: "inline-flex cursor-pointer items-center gap-2 text-[13px] text-slate-300" }, [
         input,
-        el("span", { class: "form-check-label" }, [g.name]),
+        el("span", {}, [g.name]),
       ]));
     }
     const sync = () => { box.hidden = all.checked; };
     all.addEventListener("change", sync);
     sync();
-    const save = el("button", { type: "button", class: "btn btn-sm btn-outline-secondary" }, ["Save access"]);
+    const save = el("button", { type: "button", class: btnGhost }, ["Save access"]);
     save.addEventListener("click", () => saveAccess(u, all, box));
-    return el("div", { class: "w-100 d-flex flex-wrap align-items-center gap-2" }, [
-      el("label", { class: "form-check mb-0" }, [
+    return el("div", { class: "mt-3 flex w-full flex-wrap items-center gap-x-4 gap-y-2" }, [
+      el("label", { class: "inline-flex cursor-pointer items-center gap-2 text-[13px] text-slate-200" }, [
         all,
-        el("span", { class: "form-check-label" }, ["All hosts"]),
+        el("span", {}, ["All hosts"]),
       ]),
       box,
       save,
@@ -1257,9 +1299,15 @@ async function api(path, opts = {}) {
 function toast(message) {
   const node = document.getElementById("toast");
   const body = document.getElementById("toast-body");
-  if (!node || !body || typeof bootstrap === "undefined") return;
+  if (!node || !body) return;
   body.textContent = message;
-  bootstrap.Toast.getOrCreateInstance(node, { delay: 2400 }).show();
+  if (typeof bootstrap !== "undefined" && bootstrap.Toast) {
+    bootstrap.Toast.getOrCreateInstance(node, { delay: 2400 }).show();
+    return;
+  }
+  node.hidden = false;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { node.hidden = true; }, 2400);
 }
 
 function showAdminLinks() {
@@ -1317,6 +1365,23 @@ function applyBrand() {
 }
 
 applyBrand();
+
+function iconChevron() {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.5");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("class", "chevron");
+  const path = document.createElementNS(ns, "path");
+  path.setAttribute("d", "M6 3.5 10.5 8 6 12.5");
+  svg.append(path);
+  return svg;
+}
 
 function el(tag, attrs, children) {
   const node = document.createElement(tag);

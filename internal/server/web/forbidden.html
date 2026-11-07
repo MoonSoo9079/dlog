@@ -1,27 +1,30 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en" class="h-full bg-ink-bg">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#121214">
   <title>Admins only · Dlog</title>
-  <link rel="stylesheet" href="/bootstrap.min.css">
-  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/viewer.css">
 </head>
-<body class="d-flex align-items-center justify-content-center min-vh-100 p-3" data-title="Admins only">
-  <div class="login-card card shadow">
-    <div class="card-body p-4">
-      <div class="brand d-flex align-items-center gap-2 mb-2">
-        <span class="lamp" aria-hidden="true"></span>
-        <span class="h4 mb-0" data-brand>Dlog</span>
-      </div>
-      <h1 class="h5">Admins only</h1>
-      <p class="text-secondary">This page is for admin accounts. Your account can read logs.</p>
-      <div class="d-flex gap-2">
-        <a class="btn btn-warning" href="/">Back to logs</a>
-        <form method="post" action="/api/v1/logout">
-          <button type="submit" class="btn btn-outline-secondary">Log out</button>
-        </form>
-      </div>
+<body class="flex min-h-dvh items-center justify-center bg-ink-bg p-4 font-sans text-slate-200 antialiased" data-title="Admins only">
+  <div class="w-full max-w-sm rounded-md border border-ink-line bg-ink-chrome px-6 py-6">
+    <div class="flex items-center gap-2.5">
+      <svg class="h-3.5 w-3.5 text-amber-500" viewBox="0 0 14 14" aria-hidden="true">
+        <rect x="1" y="1" width="12" height="2" fill="currentColor"/>
+        <rect x="1" y="6" width="8" height="2" fill="currentColor"/>
+        <rect x="1" y="11" width="10" height="2" fill="currentColor"/>
+      </svg>
+      <span class="text-[15px] font-semibold tracking-tight text-slate-100" data-brand>Dlog</span>
+    </div>
+    <h1 class="mt-5 text-[15px] font-semibold text-slate-100">Admins only</h1>
+    <p class="mt-2 text-[13px] leading-relaxed text-slate-400">This page is for admin accounts. Your account can read logs.</p>
+    <div class="mt-5 flex flex-wrap items-center gap-2">
+      <a class="inline-flex h-8 cursor-pointer items-center rounded-md border border-amber-500 bg-amber-500 px-3 text-[12px] font-medium text-[#1c1408] transition-colors duration-150 ease-in-out hover:bg-amber-400" href="/">Back to logs</a>
+      <form method="post" action="/api/v1/logout">
+        <button type="submit" class="inline-flex h-8 cursor-pointer items-center rounded-md border border-ink-edge bg-ink-field px-3 text-[12px] font-medium text-slate-300 transition-colors duration-150 ease-in-out hover:border-slate-500 hover:text-slate-100">Log out</button>
+      </form>
     </div>
   </div>
   <script src="/app.js"></script>

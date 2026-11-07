@@ -1,74 +1,112 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en" class="h-full bg-ink-bg">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#121214">
   <title>Dlog</title>
-  <link rel="stylesheet" href="/bootstrap.min.css">
-  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/viewer.css">
 </head>
-<body class="d-flex flex-column vh-100" data-title="Logs">
-  <header class="border-bottom px-3 py-2 d-flex flex-wrap align-items-center gap-2 flex-shrink-0">
-    <div class="brand d-flex align-items-center gap-2 fw-semibold">
-      <span class="lamp" aria-hidden="true"></span>
-      <span data-brand>Dlog</span>
-    </div>
-    <div class="top-search">
-      <label class="visually-hidden" for="q">Search lines</label>
-      <input id="q" class="form-control" type="search" placeholder="Search lines  (/)" autocomplete="off" spellcheck="false">
-    </div>
-    <div class="d-flex align-items-center gap-2 ms-md-auto">
-      <span id="version" class="badge text-bg-secondary"></span>
-      <button type="button" id="follow" class="btn btn-sm btn-warning on" aria-pressed="true">Follow</button>
-      <a class="btn btn-sm btn-outline-light" href="/account">Account</a>
-      <a id="admin-link" class="btn btn-sm btn-outline-light" href="/admin" hidden>Admin</a>
-      <a id="settings-link" class="btn btn-sm btn-outline-light" href="/admin#general" hidden>Settings</a>
-      <button type="button" id="logout" class="btn btn-sm btn-outline-secondary">Log out</button>
-    </div>
-  </header>
-  <div class="d-flex flex-column flex-md-row flex-grow-1 min-h-0">
-    <aside class="host-pane border-end overflow-auto d-flex flex-column">
-      <div class="host-tools">
-        <div class="px-3 pt-2 pb-1 text-secondary small text-uppercase d-flex justify-content-between">
-          <span>Hosts</span>
-          <span id="host-count"></span>
-        </div>
-        <div class="px-3 pb-2">
-          <label class="visually-hidden" for="host-q">Search hosts</label>
-          <input id="host-q" class="form-control form-control-sm" type="search" placeholder="Search hosts" autocomplete="off" spellcheck="false">
-        </div>
+<body class="h-dvh overflow-hidden bg-ink-bg font-sans text-slate-200 antialiased" data-title="Logs">
+  <a href="#log-scroll" class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-50 focus:border focus:border-ink-edge focus:bg-ink-chrome focus:px-3 focus:py-2 focus:text-slate-100">Skip to logs</a>
+  <div class="flex h-full flex-col">
+    <header class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-ink-line bg-ink-chrome px-4 py-3 lg:h-14 lg:flex-nowrap lg:py-0">
+      <div class="flex items-center gap-3">
+        <h1 class="flex items-center gap-2.5 text-[15px] font-semibold tracking-tight text-slate-100">
+          <svg class="h-3.5 w-3.5 text-amber-500" viewBox="0 0 14 14" aria-hidden="true">
+            <rect x="1" y="1" width="12" height="2" fill="currentColor"/>
+            <rect x="1" y="6" width="8" height="2" fill="currentColor"/>
+            <rect x="1" y="11" width="10" height="2" fill="currentColor"/>
+          </svg>
+          <span data-brand>Dlog</span>
+        </h1>
+        <span class="h-4 w-px bg-ink-line" aria-hidden="true"></span>
+        <span class="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">Logs</span>
       </div>
-      <div id="hosts" class="list-group list-group-flush"></div>
-    </aside>
-    <section class="d-flex flex-column flex-grow-1 min-h-0 min-w-0">
-      <div id="chips" class="d-flex align-items-center flex-shrink-0 gap-2 overflow-auto px-3 py-2 border-bottom"></div>
-      <div class="d-flex flex-wrap align-items-center gap-2 px-3 py-2">
-        <button type="button" id="older" class="btn btn-sm btn-outline-secondary">Older</button>
-        <label class="visually-hidden" for="stream">Stream</label>
-        <select id="stream" class="form-select form-select-sm w-auto" aria-label="Stream">
-          <option value="">All streams</option>
-          <option value="stdout">stdout</option>
-          <option value="stderr">stderr</option>
-        </select>
-        <label class="visually-hidden" for="range">Time</label>
-        <select id="range" class="form-select form-select-sm w-auto" aria-label="Time">
-          <option value="">All time</option>
-          <option value="15m">Last 15 minutes</option>
-          <option value="1h">Last hour</option>
-          <option value="from">From</option>
-        </select>
-        <input id="since" class="form-control form-control-sm since-input" type="datetime-local" aria-label="Start time" hidden>
-        <span id="logmeta" class="text-secondary small">Select a host</span>
+      <div class="ml-auto flex flex-wrap items-center gap-1.5">
+        <span id="version" class="mr-1 font-mono text-[11px] tabular-nums text-slate-500"></span>
+        <button type="button" id="follow" class="is-on inline-flex h-8 cursor-pointer items-center gap-2 rounded-md border border-ink-edge bg-transparent px-3 text-[12px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:border-slate-500 hover:text-slate-200" aria-pressed="true">
+          <span class="follow-lamp" aria-hidden="true"></span>
+          Follow
+        </button>
+        <span class="mx-1 hidden h-4 w-px bg-ink-line sm:block" aria-hidden="true"></span>
+        <a class="cursor-pointer rounded-md px-2.5 py-1.5 text-[13px] text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-100" href="/account">Account</a>
+        <a id="admin-link" class="cursor-pointer rounded-md px-2.5 py-1.5 text-[13px] text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-100" href="/admin" hidden>Admin</a>
+        <a id="settings-link" class="cursor-pointer rounded-md px-2.5 py-1.5 text-[13px] text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-100" href="/admin#general" hidden>Settings</a>
+        <button type="button" id="logout" class="cursor-pointer rounded-md px-2.5 py-1.5 text-[13px] text-slate-500 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200">Log out</button>
       </div>
-      <div id="log" class="log flex-grow-1 overflow-auto" role="log" aria-live="polite"></div>
-    </section>
-  </div>
-  <div class="toast-container position-fixed bottom-0 start-50 translate-middle-x p-3">
-    <div id="toast" class="toast align-items-center text-bg-dark border" role="status" aria-live="polite" aria-atomic="true">
-      <div id="toast-body" class="toast-body"></div>
+    </header>
+    <div class="flex min-h-0 flex-1 flex-col md:flex-row">
+      <aside class="flex max-h-60 w-full shrink-0 flex-col border-b border-ink-line bg-ink-chrome md:max-h-none md:w-80 md:border-b-0 md:border-r">
+        <div class="shrink-0 px-4 pb-3 pt-4">
+          <div class="flex items-baseline justify-between gap-3">
+            <h2 class="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">Hosts</h2>
+            <span id="host-count" class="font-mono text-[11px] tabular-nums text-slate-400"></span>
+          </div>
+          <label class="sr-only" for="host-q">Search hosts</label>
+          <div class="relative mt-3">
+            <svg class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.25"/>
+              <path d="M10.5 10.5 13.5 13.5"/>
+            </svg>
+            <input id="host-q" class="h-8 w-full cursor-text rounded-md border border-ink-edge bg-ink-field pl-8 pr-3 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 focus:border-amber-500/70 focus:outline-none" type="search" placeholder="Search hosts" autocomplete="off" spellcheck="false">
+          </div>
+        </div>
+        <div id="hosts" class="min-h-0 flex-1 overflow-y-auto pb-4" aria-label="Hosts"></div>
+      </aside>
+      <section class="flex min-h-0 min-w-0 flex-1 flex-col bg-ink-bg">
+        <div class="flex shrink-0 flex-col gap-2.5 border-b border-ink-line bg-ink-chrome px-4 py-3">
+          <div id="chips" class="flex min-w-0 items-center overflow-x-auto" role="toolbar" aria-label="Containers"></div>
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="dlog-field inline-flex h-8 w-full items-stretch overflow-hidden rounded-md border border-ink-edge bg-ink-field transition-colors duration-150 ease-in-out sm:w-72">
+              <label for="q" class="flex cursor-pointer items-center border-r border-ink-edge px-2.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Filter</label>
+              <input id="q" class="min-w-0 flex-1 cursor-text bg-transparent px-2.5 font-mono text-[12px] text-slate-200 placeholder:text-slate-500 focus:outline-none" type="search" placeholder="This log only" autocomplete="off" spellcheck="false">
+              <kbd class="pointer-events-none mr-2 hidden self-center border border-ink-edge px-1.5 py-0.5 font-mono text-[10px] text-slate-500 sm:inline" aria-hidden="true">/</kbd>
+            </div>
+            <div class="dlog-field inline-flex h-8 items-stretch overflow-hidden rounded-md border border-ink-edge bg-ink-field transition-colors duration-150 ease-in-out">
+              <label for="stream" class="flex cursor-pointer items-center border-r border-ink-edge px-2.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Stream</label>
+              <select id="stream" class="dlog-select min-w-[8.75rem] cursor-pointer pl-2.5 text-[12px] text-slate-200">
+                <option value="">All streams</option>
+                <option value="stdout">stdout</option>
+                <option value="stderr">stderr</option>
+              </select>
+            </div>
+            <div class="dlog-field inline-flex h-8 items-stretch overflow-hidden rounded-md border border-ink-edge bg-ink-field transition-colors duration-150 ease-in-out">
+              <label for="range" class="flex cursor-pointer items-center border-r border-ink-edge px-2.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Time</label>
+              <select id="range" class="dlog-select min-w-[10.5rem] cursor-pointer pl-2.5 text-[12px] text-slate-200">
+                <option value="">All time</option>
+                <option value="15m">Last 15 minutes</option>
+                <option value="1h">Last hour</option>
+                <option value="from">From</option>
+              </select>
+            </div>
+            <input id="since" class="h-8 cursor-pointer rounded-md border border-ink-edge bg-ink-field px-2.5 font-mono text-[12px] text-slate-200 transition-colors duration-150 ease-in-out hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" type="datetime-local" aria-label="Start time" hidden>
+            <button type="button" id="older" class="inline-flex h-8 cursor-pointer items-center rounded-md border border-ink-edge bg-ink-field px-3 text-[12px] font-medium text-slate-300 transition-colors duration-150 ease-in-out hover:border-slate-500 hover:text-slate-100">Older</button>
+            <span id="logmeta" class="ml-auto whitespace-nowrap pl-2 text-right font-mono text-[12px] tabular-nums text-slate-400">Select a host</span>
+          </div>
+        </div>
+        <div id="log-scroll" class="min-h-0 flex-1 overflow-auto bg-ink-bg" tabindex="-1">
+          <div class="log-head log-cols sticky top-0 z-10 border-b border-ink-line bg-ink-bg font-sans text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">
+            <span>Time</span>
+            <span>Container</span>
+            <span>Stream</span>
+            <span>Message</span>
+          </div>
+          <div id="log" role="log" aria-live="polite"></div>
+          <div id="log-empty" class="px-4 py-14">
+            <p data-empty-title class="text-[13px] font-medium text-slate-300">Select a host</p>
+            <p data-empty-hint class="mt-1.5 max-w-md text-[13px] leading-relaxed text-slate-400">Hosts appear after an agent registers with the shared certificate.</p>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
-  <script src="/bootstrap.bundle.min.js"></script>
+  <div class="pointer-events-none fixed bottom-5 left-1/2 z-50 -translate-x-1/2">
+    <div id="toast" class="pointer-events-auto rounded-md border border-ink-edge bg-ink-chrome px-4 py-2.5 text-[13px] text-slate-200" role="status" aria-live="polite" hidden>
+      <div id="toast-body"></div>
+    </div>
+  </div>
   <script src="/app.js"></script>
 </body>
 </html>

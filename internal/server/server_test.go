@@ -103,7 +103,7 @@ func TestHTTPAuthIngestAndUI(t *testing.T) {
 	res = do(t, client, http.MethodGet, ts.URL+"/login", "", "")
 	page, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 200 || !strings.Contains(string(page), "Username") || !strings.Contains(string(page), "Password") || !strings.Contains(string(page), "/bootstrap.min.css") {
+	if res.StatusCode != 200 || !strings.Contains(string(page), "Username") || !strings.Contains(string(page), "Password") || !strings.Contains(string(page), "/viewer.css") {
 		t.Fatalf("login page: %d", res.StatusCode)
 	}
 
@@ -154,8 +154,19 @@ func TestHTTPAuthIngestAndUI(t *testing.T) {
 	}
 	page, _ = io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 200 || !strings.Contains(string(page), "Dlog") || !strings.Contains(string(page), "/app.js") || !strings.Contains(string(page), "/bootstrap.min.css") || !strings.Contains(string(page), `href="/account"`) || !strings.Contains(string(page), `id="range"`) || strings.Contains(string(page), `id="drawer"`) || strings.Contains(string(page), `id="manage"`) {
+	if res.StatusCode != 200 || !strings.Contains(string(page), "Dlog") || !strings.Contains(string(page), "/app.js") || !strings.Contains(string(page), "/viewer.css") || !strings.Contains(string(page), `href="/account"`) || !strings.Contains(string(page), `id="range"`) || !strings.Contains(string(page), `id="log-scroll"`) || strings.Contains(string(page), `id="drawer"`) || strings.Contains(string(page), `id="manage"`) {
 		t.Fatalf("console: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/viewer.css", "", "")
+	viewerCSS, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || !strings.Contains(string(viewerCSS), "JetBrainsMono") {
+		t.Fatalf("viewer css: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/fonts/inter-latin-400.woff2", "", "")
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("font: %d", res.StatusCode)
 	}
 
 	_, hostToken, err := st.CreateHost("edge-1")

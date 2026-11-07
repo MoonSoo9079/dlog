@@ -82,6 +82,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /login", s.handleLoginPage)
 	mux.HandleFunc("GET /app.css", s.handleCSS)
 	mux.HandleFunc("GET /app.js", s.handleJS)
+	mux.HandleFunc("GET /viewer.css", s.handleViewerCSS)
+	mux.HandleFunc("GET /fonts/{file}", s.handleFont)
 	mux.HandleFunc("GET /bootstrap.min.css", s.handleBootstrapCSS)
 	mux.HandleFunc("GET /bootstrap.bundle.min.js", s.handleBootstrapJS)
 	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {

@@ -1,65 +1,71 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en" class="h-full bg-ink-bg">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#121214">
   <title>Admin · Dlog</title>
-  <link rel="stylesheet" href="/bootstrap.min.css">
-  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/viewer.css">
 </head>
-<body class="d-flex flex-column vh-100" data-title="Admin">
-  <header class="border-bottom px-3 py-2 d-flex align-items-center gap-2 flex-shrink-0">
-    <a class="brand d-flex align-items-center gap-2 fw-semibold text-decoration-none" href="/">
-      <span class="lamp" aria-hidden="true"></span>
+<body class="flex h-dvh flex-col overflow-hidden bg-ink-bg font-sans text-slate-200 antialiased" data-title="Admin">
+  <header class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-ink-line bg-ink-chrome px-4 py-3">
+    <a class="flex items-center gap-2.5 text-[15px] font-semibold tracking-tight text-slate-100" href="/">
+      <svg class="h-3.5 w-3.5 text-amber-500" viewBox="0 0 14 14" aria-hidden="true">
+        <rect x="1" y="1" width="12" height="2" fill="currentColor"/>
+        <rect x="1" y="6" width="8" height="2" fill="currentColor"/>
+        <rect x="1" y="11" width="10" height="2" fill="currentColor"/>
+      </svg>
       <span data-brand>Dlog</span>
     </a>
-    <span class="text-secondary">Admin</span>
-    <div class="ms-auto d-flex gap-2">
-      <a class="btn btn-sm btn-outline-light" href="/">Logs</a>
-      <a class="btn btn-sm btn-outline-light" href="/account">Account</a>
-      <button type="button" id="logout" class="btn btn-sm btn-outline-secondary">Log out</button>
+    <span class="h-4 w-px bg-ink-line" aria-hidden="true"></span>
+    <span class="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">Admin</span>
+    <div class="ml-auto flex flex-wrap items-center gap-1.5">
+      <a class="cursor-pointer rounded-md px-2.5 py-1.5 text-[13px] text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-100" href="/">Logs</a>
+      <a class="cursor-pointer rounded-md px-2.5 py-1.5 text-[13px] text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-100" href="/account">Account</a>
+      <button type="button" id="logout" class="cursor-pointer rounded-md px-2.5 py-1.5 text-[13px] text-slate-500 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200">Log out</button>
     </div>
   </header>
-  <div class="admin-shell flex-grow-1">
-    <nav class="admin-nav" aria-label="Admin">
-      <button type="button" id="nav-hosts" class="admin-nav-btn is-active">Hosts</button>
-      <span class="admin-nav-label">Settings</span>
-      <button type="button" id="nav-general" class="admin-nav-btn">General</button>
-      <button type="button" id="nav-registration" class="admin-nav-btn">Registration</button>
-      <button type="button" id="nav-certificate" class="admin-nav-btn">Certificate</button>
-      <button type="button" id="nav-groups" class="admin-nav-btn">Groups</button>
-      <button type="button" id="nav-accounts" class="admin-nav-btn">Accounts</button>
-      <button type="button" id="nav-directory" class="admin-nav-btn">Directory</button>
+  <div class="admin-shell flex min-h-0 flex-1 flex-col md:flex-row">
+    <nav class="admin-nav flex shrink-0 gap-1 overflow-x-auto border-b border-ink-line bg-ink-chrome px-2 py-2 md:w-56 md:flex-col md:gap-0.5 md:overflow-y-auto md:border-b-0 md:border-r md:px-2 md:py-3" aria-label="Admin">
+      <button type="button" id="nav-hosts" class="admin-nav-btn is-active shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Hosts</button>
+      <span class="admin-nav-label hidden px-4 pb-1 pt-5 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500 md:block">Settings</span>
+      <button type="button" id="nav-general" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">General</button>
+      <button type="button" id="nav-registration" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Registration</button>
+      <button type="button" id="nav-certificate" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Certificate</button>
+      <button type="button" id="nav-groups" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Groups</button>
+      <button type="button" id="nav-accounts" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Accounts</button>
+      <button type="button" id="nav-directory" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Directory</button>
     </nav>
-    <main class="admin-main flex-grow-1 overflow-auto">
-      <div class="admin-wrap px-3 px-md-4 py-4">
+    <main class="admin-main min-h-0 flex-1 overflow-auto">
+      <div class="mx-auto max-w-5xl px-4 py-8 md:px-8">
         <section id="panel-hosts">
-          <h1 class="h3">Hosts</h1>
-          <p class="text-secondary">Agents that hold this server's certificate register themselves. The hostname is how an agent is recognized and stays put. A display name is what the log list shows. Put a host in one group, or disable a host to stop it.</p>
-          <label class="visually-hidden" for="host-admin-q">Search hosts</label>
-          <input id="host-admin-q" class="form-control form-control-sm mb-3" type="search" placeholder="Search hosts" autocomplete="off" spellcheck="false">
-          <div id="admin-hosts" class="list-group"></div>
+          <h1 class="text-lg font-semibold tracking-tight text-slate-100">Hosts</h1>
+          <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">Agents that hold this server's certificate register themselves. The hostname is how an agent is recognized and stays put. A display name is what the log list shows. Put a host in one group, or disable a host to stop it.</p>
+          <label class="sr-only" for="host-admin-q">Search hosts</label>
+          <input id="host-admin-q" class="mt-5 h-8 w-full max-w-sm cursor-text rounded-md border border-ink-edge bg-ink-field px-2.5 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" type="search" placeholder="Search hosts" autocomplete="off" spellcheck="false">
+          <div id="admin-hosts" class="mt-4 border-t border-ink-line"></div>
         </section>
         <section id="panel-general" hidden>
-          <h1 class="h3">General</h1>
-          <p class="text-secondary">The name is shown in the header and on the sign-in page. Leave it blank to use Dlog. The tagline replaces the sentence under the name on the sign-in page.</p>
-          <form id="save-general">
-            <div class="row g-3">
-              <div class="col-md-4">
-                <label class="form-label" for="brand-name">Name</label>
-                <input id="brand-name" class="form-control" maxlength="40" autocomplete="off" spellcheck="false">
+          <h1 class="text-lg font-semibold tracking-tight text-slate-100">General</h1>
+          <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">The name is shown in the header and on the sign-in page. Leave it blank to use Dlog. The tagline replaces the sentence under the name on the sign-in page.</p>
+          <form id="save-general" class="mt-6 max-w-3xl">
+            <div class="grid gap-4 md:grid-cols-3">
+              <div>
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="brand-name">Name</label>
+                <input id="brand-name" class="h-8 w-full rounded-md border border-ink-edge bg-ink-field px-2.5 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" maxlength="40" autocomplete="off" spellcheck="false">
               </div>
-              <div class="col-md-8">
-                <label class="form-label" for="brand-tagline">Sign-in tagline</label>
-                <input id="brand-tagline" class="form-control" maxlength="80" autocomplete="off">
+              <div class="md:col-span-2">
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="brand-tagline">Sign-in tagline</label>
+                <input id="brand-tagline" class="h-8 w-full rounded-md border border-ink-edge bg-ink-field px-2.5 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" maxlength="80" autocomplete="off">
               </div>
             </div>
-            <h2 class="h5 mt-4">Logs and sessions</h2>
-            <p class="text-secondary">Lines older than the retention window are deleted about once a minute. Keep logs stores them until you delete a host. A session stays signed in while the browser is in use, and each request extends it. A host looks offline when nothing has been heard for the offline window. Agents send a heartbeat every 15 seconds.</p>
-            <div class="row g-3">
-              <div class="col-sm-4">
-                <label class="form-label" for="retention">Keep logs for</label>
-                <select id="retention" class="form-select">
+            <h2 class="mt-8 text-[15px] font-semibold text-slate-100">Logs and sessions</h2>
+            <p class="mt-2 text-[13px] leading-relaxed text-slate-400">Lines older than the retention window are deleted about once a minute. Keep logs stores them until you delete a host. A session stays signed in while the browser is in use, and each request extends it. A host looks offline when nothing has been heard for the offline window. Agents send a heartbeat every 15 seconds.</p>
+            <div class="mt-4 grid gap-4 sm:grid-cols-3">
+              <div>
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="retention">Keep logs for</label>
+                <select id="retention" class="ui-select h-8 w-full cursor-pointer rounded-md border border-ink-edge bg-ink-field pl-2.5 pr-8 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out hover:border-slate-500 focus:border-amber-500/70 focus:outline-none">
                   <option value="1d">1 day</option>
                   <option value="7d" selected>7 days</option>
                   <option value="30d">30 days</option>
@@ -67,9 +73,9 @@
                   <option value="0">Keep logs</option>
                 </select>
               </div>
-              <div class="col-sm-4">
-                <label class="form-label" for="session-length">Session length</label>
-                <select id="session-length" class="form-select">
+              <div>
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="session-length">Session length</label>
+                <select id="session-length" class="ui-select h-8 w-full cursor-pointer rounded-md border border-ink-edge bg-ink-field pl-2.5 pr-8 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out hover:border-slate-500 focus:border-amber-500/70 focus:outline-none">
                   <option value="4h">4 hours</option>
                   <option value="12h" selected>12 hours</option>
                   <option value="24h">1 day</option>
@@ -77,9 +83,9 @@
                   <option value="30d">30 days</option>
                 </select>
               </div>
-              <div class="col-sm-4">
-                <label class="form-label" for="offline-after">Show offline after</label>
-                <select id="offline-after" class="form-select">
+              <div>
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="offline-after">Show offline after</label>
+                <select id="offline-after" class="ui-select h-8 w-full cursor-pointer rounded-md border border-ink-edge bg-ink-field pl-2.5 pr-8 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out hover:border-slate-500 focus:border-amber-500/70 focus:outline-none">
                   <option value="45s">45 seconds</option>
                   <option value="2m">2 minutes</option>
                   <option value="5m">5 minutes</option>
@@ -87,178 +93,169 @@
                 </select>
               </div>
             </div>
-            <button type="submit" class="btn btn-warning mt-4">Save</button>
+            <button type="submit" class="mt-6 inline-flex h-8 cursor-pointer items-center rounded-md border border-amber-500 bg-amber-500 px-3 text-[12px] font-medium text-[#1c1408] transition-colors duration-150 ease-in-out hover:bg-amber-400 disabled:cursor-default disabled:opacity-40">Save</button>
           </form>
         </section>
         <section id="panel-registration" hidden>
-          <h1 class="h3">Registration</h1>
-          <p class="text-secondary">Automatic registration creates a host when an agent signs in with this server's certificate. Turn it off and new hostnames wait for approval. An agent that already registered keeps its token and can register again. A new host joins the default group, or stays ungrouped.</p>
-          <form id="save-registration">
-            <div class="form-check mb-3">
-              <input id="auto-register" class="form-check-input" type="checkbox" checked>
-              <label class="form-check-label" for="auto-register">Automatic registration</label>
-            </div>
-            <div class="col-sm-6 col-md-4">
-              <label class="form-label" for="default-group">Group for new hosts</label>
-              <select id="default-group" class="form-select">
+          <h1 class="text-lg font-semibold tracking-tight text-slate-100">Registration</h1>
+          <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">Automatic registration creates a host when an agent signs in with this server's certificate. Turn it off and new hostnames wait for approval. An agent that already registered keeps its token and can register again. A new host joins the default group, or stays ungrouped.</p>
+          <form id="save-registration" class="mt-6 max-w-md">
+            <label class="inline-flex cursor-pointer items-center gap-2 text-[13px] text-slate-200" for="auto-register">
+              <input id="auto-register" class="h-3.5 w-3.5 cursor-pointer" type="checkbox" checked>
+              Automatic registration
+            </label>
+            <div class="mt-4">
+              <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="default-group">Group for new hosts</label>
+              <select id="default-group" class="ui-select h-8 w-full cursor-pointer rounded-md border border-ink-edge bg-ink-field pl-2.5 pr-8 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out hover:border-slate-500 focus:border-amber-500/70 focus:outline-none">
                 <option value="">Ungrouped</option>
               </select>
             </div>
-            <button type="submit" class="btn btn-warning mt-4">Save</button>
+            <button type="submit" class="mt-5 inline-flex h-8 cursor-pointer items-center rounded-md border border-amber-500 bg-amber-500 px-3 text-[12px] font-medium text-[#1c1408] transition-colors duration-150 ease-in-out hover:bg-amber-400 disabled:cursor-default disabled:opacity-40">Save</button>
           </form>
-          <h2 class="h5 mt-4">Waiting for approval</h2>
-          <p class="text-secondary">These agents signed a registration while automatic registration was off. Approve creates the host. The agent receives a token the next time it registers. Dismiss drops the request.</p>
-          <div id="pending-hosts" class="list-group"></div>
+          <h2 class="mt-8 text-[15px] font-semibold text-slate-100">Waiting for approval</h2>
+          <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">These agents signed a registration while automatic registration was off. Approve creates the host. The agent receives a token the next time it registers. Dismiss drops the request.</p>
+          <div id="pending-hosts" class="mt-4 border-t border-ink-line"></div>
         </section>
         <section id="panel-certificate" hidden>
-          <h1 class="h3">Certificate</h1>
-          <p class="text-secondary">Every agent uses this certificate to register. Replacing it stops registration until each agent has the new certificate and key. Hosts that already have a token keep sending logs.</p>
-          <p id="cert-fingerprint" class="cert-fp font-monospace small mb-1"></p>
-          <p id="cert-expiry" class="text-secondary small mb-1"></p>
-          <p id="cert-paths" class="text-secondary small"></p>
-          <div class="d-flex flex-wrap gap-2">
-            <a class="btn btn-sm btn-outline-light" href="/api/v1/admin/certificate.pem">Download certificate</a>
-            <button type="button" id="generate-cert" class="btn btn-sm btn-outline-danger">Generate a new certificate</button>
+          <h1 class="text-lg font-semibold tracking-tight text-slate-100">Certificate</h1>
+          <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">Every agent uses this certificate to register. Replacing it stops registration until each agent has the new certificate and key. Hosts that already have a token keep sending logs.</p>
+          <p id="cert-fingerprint" class="mt-5 break-all font-mono text-[12px] text-slate-300"></p>
+          <p id="cert-expiry" class="mt-1 text-[12px] text-slate-500"></p>
+          <p id="cert-paths" class="mt-1 break-all text-[12px] text-slate-500"></p>
+          <div class="mt-4 flex flex-wrap gap-2">
+            <a class="inline-flex h-8 cursor-pointer items-center rounded-md border border-ink-edge bg-ink-field px-3 text-[12px] font-medium text-slate-300 transition-colors duration-150 ease-in-out hover:border-slate-500 hover:text-slate-100" href="/api/v1/admin/certificate.pem">Download certificate</a>
+            <button type="button" id="generate-cert" class="inline-flex h-8 cursor-pointer items-center rounded-md border border-status-down bg-transparent px-3 text-[12px] font-medium text-clay transition-colors duration-150 ease-in-out hover:bg-status-down/10 disabled:cursor-default disabled:opacity-40">Generate a new certificate</button>
           </div>
-          <div id="cert-once" class="mt-3" hidden></div>
-          <form id="replace-cert" class="mt-4">
-            <h2 class="h6">Replace with your own pair</h2>
-            <p class="text-secondary">Use an ECDSA P-256 certificate and its private key. Both files are PEM text.</p>
-            <div class="row g-3">
-              <div class="col-md-6">
-                <label class="form-label" for="cert-file">Certificate</label>
-                <input id="cert-file" class="form-control" type="file" accept=".pem,.crt,.cer,text/plain">
+          <div id="cert-once" class="mt-4" hidden></div>
+          <form id="replace-cert" class="mt-8 max-w-3xl border-t border-ink-line pt-6">
+            <h2 class="text-[13px] font-semibold text-slate-100">Replace with your own pair</h2>
+            <p class="mt-2 text-[13px] leading-relaxed text-slate-400">Use an ECDSA P-256 certificate and its private key. Both files are PEM text.</p>
+            <div class="mt-4 grid gap-4 md:grid-cols-2">
+              <div>
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="cert-file">Certificate</label>
+                <input id="cert-file" class="block w-full cursor-pointer rounded-md border border-ink-edge bg-ink-field px-2 py-1.5 text-[13px] text-slate-300 transition-colors duration-150 ease-in-out file:mr-3 file:cursor-pointer file:rounded-md file:border file:border-ink-edge file:bg-ink-bg file:px-2.5 file:py-1 file:text-[12px] file:font-medium file:text-slate-200 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" type="file" accept=".pem,.crt,.cer,text/plain">
               </div>
-              <div class="col-md-6">
-                <label class="form-label" for="key-file">Private key</label>
-                <input id="key-file" class="form-control" type="file" accept=".pem,.key,text/plain">
+              <div>
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="key-file">Private key</label>
+                <input id="key-file" class="block w-full cursor-pointer rounded-md border border-ink-edge bg-ink-field px-2 py-1.5 text-[13px] text-slate-300 transition-colors duration-150 ease-in-out file:mr-3 file:cursor-pointer file:rounded-md file:border file:border-ink-edge file:bg-ink-bg file:px-2.5 file:py-1 file:text-[12px] file:font-medium file:text-slate-200 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" type="file" accept=".pem,.key,text/plain">
               </div>
             </div>
-            <button type="submit" class="btn btn-outline-warning mt-3">Replace certificate</button>
+            <button type="submit" class="mt-4 inline-flex h-8 cursor-pointer items-center rounded-md border border-amber-500/50 bg-transparent px-3 text-[12px] font-medium text-amber-300 transition-colors duration-150 ease-in-out hover:bg-amber-500/10">Replace certificate</button>
           </form>
         </section>
         <section id="panel-groups" hidden>
-          <h1 class="h3">Groups</h1>
-          <p class="text-secondary">A group is a folder in the log list. A host is in one group. Deleting a group leaves its hosts ungrouped. A name starts with a letter or digit and may use letters, digits, spaces, <span class="font-monospace">.</span>, <span class="font-monospace">_</span>, and <span class="font-monospace">-</span>.</p>
-          <form id="create-group" class="card mb-4">
-            <div class="card-body">
-              <h2 class="h5">New group</h2>
-              <div class="row g-2 align-items-end">
-                <div class="col-sm">
-                  <label class="form-label" for="group-name">Name</label>
-                  <input id="group-name" class="form-control" name="name" maxlength="64" autocomplete="off" spellcheck="false" required>
-                </div>
-                <div class="col-sm-auto">
-                  <button type="submit" class="btn btn-warning">Create</button>
-                </div>
+          <h1 class="text-lg font-semibold tracking-tight text-slate-100">Groups</h1>
+          <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">A group is a folder in the log list. A host is in one group. Deleting a group leaves its hosts ungrouped. A name starts with a letter or digit and may use letters, digits, spaces, <span class="font-mono">.</span>, <span class="font-mono">_</span>, and <span class="font-mono">-</span>.</p>
+          <form id="create-group" class="mb-8 mt-6 max-w-xl rounded-md border border-ink-line bg-ink-chrome px-5 py-5">
+            <h2 class="text-[15px] font-semibold text-slate-100">New group</h2>
+            <div class="mt-4 flex flex-wrap items-end gap-2">
+              <div class="min-w-[12rem] flex-1">
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="group-name">Name</label>
+                <input id="group-name" class="h-8 w-full rounded-md border border-ink-edge bg-ink-field px-2.5 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" name="name" maxlength="64" autocomplete="off" spellcheck="false" required>
               </div>
+              <button type="submit" class="inline-flex h-8 cursor-pointer items-center rounded-md border border-amber-500 bg-amber-500 px-3 text-[12px] font-medium text-[#1c1408] transition-colors duration-150 ease-in-out hover:bg-amber-400">Create</button>
             </div>
           </form>
-          <div id="admin-groups" class="list-group"></div>
+          <div id="admin-groups" class="border-t border-ink-line"></div>
         </section>
         <section id="panel-accounts" hidden>
-          <h1 class="h3">Accounts</h1>
-          <p class="text-secondary">Users can read logs. Admins can also manage hosts, groups, and accounts. A user sees every host, or only the groups you tick. Hosts with no group stay visible to admins and to users who can see all hosts. A username starts with a letter or digit and may use letters, digits, <span class="font-monospace">.</span>, <span class="font-monospace">_</span>, and <span class="font-monospace">-</span>. A password is 8 to 72 characters. Setting a password signs that account out. A directory account uses its directory password, and its role is set from the admin group at sign-in.</p>
-          <form id="create-user" class="card mb-4">
-            <div class="card-body">
-              <h2 class="h5">New account</h2>
-              <div class="row g-2 align-items-end">
-                <div class="col-sm">
-                  <label class="form-label" for="new-username">Username</label>
-                  <input id="new-username" class="form-control" name="username" autocomplete="off" maxlength="64" required>
-                </div>
-                <div class="col-sm">
-                  <label class="form-label" for="new-password">Password</label>
-                  <input id="new-password" class="form-control" name="password" type="password" autocomplete="new-password" required>
-                </div>
-                <div class="col-sm-3">
-                  <label class="form-label" for="new-role">Permission</label>
-                  <select id="new-role" class="form-select" name="role">
-                    <option value="user" selected>User</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </div>
-                <div class="col-sm-auto">
-                  <button type="submit" class="btn btn-warning">Create</button>
-                </div>
+          <h1 class="text-lg font-semibold tracking-tight text-slate-100">Accounts</h1>
+          <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">Users can read logs. Admins can also manage hosts, groups, and accounts. A user sees every host, or only the groups you tick. Hosts with no group stay visible to admins and to users who can see all hosts. A username starts with a letter or digit and may use letters, digits, <span class="font-mono">.</span>, <span class="font-mono">_</span>, and <span class="font-mono">-</span>. A password is 8 to 72 characters. Setting a password signs that account out. A directory account uses its directory password, and its role is set from the admin group at sign-in.</p>
+          <form id="create-user" class="mb-8 mt-6 rounded-md border border-ink-line bg-ink-chrome px-5 py-5">
+            <h2 class="text-[15px] font-semibold text-slate-100">New account</h2>
+            <div class="mt-4 flex flex-wrap items-end gap-2">
+              <div class="min-w-[10rem] flex-1">
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="new-username">Username</label>
+                <input id="new-username" class="h-8 w-full rounded-md border border-ink-edge bg-ink-field px-2.5 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" name="username" autocomplete="off" maxlength="64" required>
               </div>
+              <div class="min-w-[10rem] flex-1">
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="new-password">Password</label>
+                <input id="new-password" class="h-8 w-full rounded-md border border-ink-edge bg-ink-field px-2.5 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" name="password" type="password" autocomplete="new-password" required>
+              </div>
+              <div class="w-36">
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="new-role">Permission</label>
+                <select id="new-role" class="ui-select h-8 w-full cursor-pointer rounded-md border border-ink-edge bg-ink-field pl-2.5 pr-8 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" name="role">
+                  <option value="user" selected>User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <button type="submit" class="inline-flex h-8 cursor-pointer items-center rounded-md border border-amber-500 bg-amber-500 px-3 text-[12px] font-medium text-[#1c1408] transition-colors duration-150 ease-in-out hover:bg-amber-400">Create</button>
             </div>
           </form>
-          <div id="accounts" class="list-group"></div>
+          <div id="accounts" class="border-t border-ink-line"></div>
         </section>
         <section id="panel-directory" hidden>
-          <h1 class="h3">Directory</h1>
-          <p class="text-secondary">People can sign in with a directory password. The first successful sign-in creates an account that can see every host. A member of the admin group is an admin, and each later sign-in updates that role. A local account is never replaced by a directory account with the same name. The bind password is saved and is not shown again.</p>
-          <form id="save-directory">
-            <div class="form-check mb-3">
-              <input id="ldap-enabled" class="form-check-input" type="checkbox">
-              <label class="form-check-label" for="ldap-enabled">Use a directory for sign-in</label>
-            </div>
-            <div class="row g-3">
-              <div class="col-md-8">
-                <label class="form-label" for="ldap-url">Directory URL</label>
-                <input id="ldap-url" class="form-control" autocomplete="off" spellcheck="false" placeholder="ldap://ldap.example.com">
+          <h1 class="text-lg font-semibold tracking-tight text-slate-100">Directory</h1>
+          <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">People can sign in with a directory password. The first successful sign-in creates an account that can see every host. A member of the admin group is an admin, and each later sign-in updates that role. A local account is never replaced by a directory account with the same name. The bind password is saved and is not shown again.</p>
+          <form id="save-directory" class="mt-6 max-w-3xl">
+            <label class="inline-flex cursor-pointer items-center gap-2 text-[13px] text-slate-200" for="ldap-enabled">
+              <input id="ldap-enabled" class="h-3.5 w-3.5 cursor-pointer" type="checkbox">
+              Use a directory for sign-in
+            </label>
+            <div class="mt-4 grid gap-4 md:grid-cols-3">
+              <div class="md:col-span-2">
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="ldap-url">Directory URL</label>
+                <input id="ldap-url" class="h-8 w-full rounded-md border border-ink-edge bg-ink-field px-2.5 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" autocomplete="off" spellcheck="false" placeholder="ldap://ldap.example.com">
               </div>
-              <div class="col-md-4 d-flex align-items-end">
-                <div class="form-check mb-2">
-                  <input id="ldap-starttls" class="form-check-input" type="checkbox">
-                  <label class="form-check-label" for="ldap-starttls">StartTLS</label>
-                </div>
-              </div>
-            </div>
-            <p class="text-secondary small mt-2">StartTLS is for an ldap:// URL. An ldaps:// URL is already encrypted.</p>
-            <div class="row g-3 mt-1">
-              <div class="col-md-6">
-                <label class="form-label" for="ldap-bind-dn">Bind DN</label>
-                <input id="ldap-bind-dn" class="form-control" autocomplete="off" spellcheck="false" placeholder="cn=reader,dc=example,dc=org">
-              </div>
-              <div class="col-md-6">
-                <label class="form-label" for="ldap-bind-password">Bind password</label>
-                <input id="ldap-bind-password" class="form-control" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved password">
-                <p id="ldap-bind-set" class="form-text" hidden>A bind password is saved.</p>
-                <div class="form-check mt-2">
-                  <input id="ldap-clear-bind" class="form-check-input" type="checkbox">
-                  <label class="form-check-label" for="ldap-clear-bind">Remove the saved bind password</label>
-                </div>
+              <div class="flex items-end pb-1">
+                <label class="inline-flex cursor-pointer items-center gap-2 text-[13px] text-slate-200" for="ldap-starttls">
+                  <input id="ldap-starttls" class="h-3.5 w-3.5 cursor-pointer" type="checkbox">
+                  StartTLS
+                </label>
               </div>
             </div>
-            <div class="mt-3">
-              <label class="form-label" for="ldap-base-dn">Base DN</label>
-              <input id="ldap-base-dn" class="form-control" autocomplete="off" spellcheck="false" placeholder="dc=example,dc=org">
-            </div>
-            <div class="row g-3 mt-1">
-              <div class="col-md-8">
-                <label class="form-label" for="ldap-user-filter">User filter</label>
-                <input id="ldap-user-filter" class="form-control" autocomplete="off" spellcheck="false" value="(uid=%s)">
+            <p class="mt-2 text-[12px] leading-relaxed text-slate-500">StartTLS is for an ldap:// URL. An ldaps:// URL is already encrypted.</p>
+            <div class="mt-4 grid gap-4 md:grid-cols-2">
+              <div>
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="ldap-bind-dn">Bind DN</label>
+                <input id="ldap-bind-dn" class="h-8 w-full rounded-md border border-ink-edge bg-ink-field px-2.5 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" autocomplete="off" spellcheck="false" placeholder="cn=reader,dc=example,dc=org">
               </div>
-              <div class="col-md-4">
-                <label class="form-label" for="ldap-username-attr">Username attribute</label>
-                <input id="ldap-username-attr" class="form-control" autocomplete="off" spellcheck="false" value="uid">
+              <div>
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="ldap-bind-password">Bind password</label>
+                <input id="ldap-bind-password" class="h-8 w-full rounded-md border border-ink-edge bg-ink-field px-2.5 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved password">
+                <p id="ldap-bind-set" class="mt-1.5 text-[12px] text-slate-500" hidden>A bind password is saved.</p>
+                <label class="mt-2 inline-flex cursor-pointer items-center gap-2 text-[13px] text-slate-300" for="ldap-clear-bind">
+                  <input id="ldap-clear-bind" class="h-3.5 w-3.5 cursor-pointer" type="checkbox">
+                  Remove the saved bind password
+                </label>
               </div>
             </div>
-            <p class="text-secondary small mt-2">The filter needs one <span class="font-monospace">%s</span>. That is replaced with the username. The attribute must match the name the person types, ignoring case.</p>
-            <div class="mt-3">
-              <label class="form-label" for="ldap-admin-group">Admin group DN</label>
-              <input id="ldap-admin-group" class="form-control" autocomplete="off" spellcheck="false" placeholder="cn=admins,ou=groups,dc=example,dc=org">
+            <div class="mt-4">
+              <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="ldap-base-dn">Base DN</label>
+              <input id="ldap-base-dn" class="h-8 w-full rounded-md border border-ink-edge bg-ink-field px-2.5 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" autocomplete="off" spellcheck="false" placeholder="dc=example,dc=org">
             </div>
-            <p class="text-secondary small mt-2">Leave the bind DN blank to search without a bind. Leave the admin group blank and every directory account is a user.</p>
-            <p class="text-secondary small mt-3 mb-2">Test connection checks this form and does not save it. A blank bind password uses the saved one.</p>
-            <div>
-              <button type="submit" class="btn btn-warning">Save</button>
-              <button type="button" id="test-directory" class="btn btn-outline-secondary ms-2">Test connection</button>
+            <div class="mt-4 grid gap-4 md:grid-cols-3">
+              <div class="md:col-span-2">
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="ldap-user-filter">User filter</label>
+                <input id="ldap-user-filter" class="h-8 w-full rounded-md border border-ink-edge bg-ink-field px-2.5 font-mono text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" autocomplete="off" spellcheck="false" value="(uid=%s)">
+              </div>
+              <div>
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="ldap-username-attr">Username attribute</label>
+                <input id="ldap-username-attr" class="h-8 w-full rounded-md border border-ink-edge bg-ink-field px-2.5 font-mono text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" autocomplete="off" spellcheck="false" value="uid">
+              </div>
             </div>
-            <p id="directory-test-result" class="small mt-2" role="status" hidden></p>
+            <p class="mt-2 text-[12px] leading-relaxed text-slate-500">The filter needs one <span class="font-mono">%s</span>. That is replaced with the username. The attribute must match the name the person types, ignoring case.</p>
+            <div class="mt-4">
+              <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="ldap-admin-group">Admin group DN</label>
+              <input id="ldap-admin-group" class="h-8 w-full rounded-md border border-ink-edge bg-ink-field px-2.5 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" autocomplete="off" spellcheck="false" placeholder="cn=admins,ou=groups,dc=example,dc=org">
+            </div>
+            <p class="mt-2 text-[12px] leading-relaxed text-slate-500">Leave the bind DN blank to search without a bind. Leave the admin group blank and every directory account is a user.</p>
+            <p class="mb-3 mt-5 text-[12px] leading-relaxed text-slate-500">Test connection checks this form and does not save it. A blank bind password uses the saved one.</p>
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="submit" class="inline-flex h-8 cursor-pointer items-center rounded-md border border-amber-500 bg-amber-500 px-3 text-[12px] font-medium text-[#1c1408] transition-colors duration-150 ease-in-out hover:bg-amber-400">Save</button>
+              <button type="button" id="test-directory" class="inline-flex h-8 cursor-pointer items-center rounded-md border border-ink-edge bg-ink-field px-3 text-[12px] font-medium text-slate-300 transition-colors duration-150 ease-in-out hover:border-slate-500 hover:text-slate-100 disabled:cursor-default disabled:opacity-40">Test connection</button>
+            </div>
+            <p id="directory-test-result" class="mt-2 text-[13px]" role="status" hidden></p>
           </form>
         </section>
       </div>
     </main>
   </div>
-  <div class="toast-container position-fixed bottom-0 start-50 translate-middle-x p-3">
-    <div id="toast" class="toast align-items-center text-bg-dark border" role="status" aria-live="polite" aria-atomic="true">
-      <div id="toast-body" class="toast-body"></div>
+  <div class="pointer-events-none fixed bottom-5 left-1/2 z-50 -translate-x-1/2">
+    <div id="toast" class="pointer-events-auto rounded-md border border-ink-edge bg-ink-chrome px-4 py-2.5 text-[13px] text-slate-200" role="status" aria-live="polite" hidden>
+      <div id="toast-body"></div>
     </div>
   </div>
-  <script src="/bootstrap.bundle.min.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
