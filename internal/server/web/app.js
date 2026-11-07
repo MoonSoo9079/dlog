@@ -37,6 +37,7 @@ function initApp() {
   const hostsEl = document.getElementById("hosts");
   const hostCountEl = document.getElementById("host-count");
   const hostQEl = document.getElementById("host-q");
+  const hostsToggle = document.getElementById("hosts-toggle");
   const chipsEl = document.getElementById("chips");
   const logEl = document.getElementById("log");
   // Rows live in #log. The parent scroller keeps the column header sticky
@@ -102,6 +103,19 @@ function initApp() {
     }, 250);
   });
   hostQEl.addEventListener("input", () => paintHosts());
+  if (hostsToggle) {
+    const hostsPaneKey = "dlog.hosts-pane";
+    const applyHostsPane = (open) => {
+      document.documentElement.classList.toggle("hosts-collapsed", !open);
+      hostsToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      hostsToggle.setAttribute("aria-label", open ? "Hide hosts" : "Show hosts");
+      try { localStorage.setItem(hostsPaneKey, open ? "open" : "closed"); } catch (e) { /* keep the choice for this page */ }
+    };
+    applyHostsPane(!document.documentElement.classList.contains("hosts-collapsed"));
+    hostsToggle.addEventListener("click", () => {
+      applyHostsPane(document.documentElement.classList.contains("hosts-collapsed"));
+    });
+  }
   document.addEventListener("keydown", (e) => {
     if (e.key === "/" && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
       e.preventDefault();

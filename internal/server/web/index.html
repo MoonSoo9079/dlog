@@ -7,6 +7,11 @@
   <meta name="theme-color" content="#121214">
   <title>Dlog</title>
   <link rel="stylesheet" href="/viewer.css">
+  <script>
+    try {
+      if (localStorage.getItem("dlog.hosts-pane") === "closed") document.documentElement.classList.add("hosts-collapsed");
+    } catch (e) {}
+  </script>
 </head>
 <body class="h-dvh overflow-hidden bg-ink-bg font-sans text-slate-200 antialiased" data-title="Logs">
   <a href="#log-scroll" class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-50 focus:border focus:border-ink-edge focus:bg-ink-chrome focus:px-3 focus:py-2 focus:text-slate-100">Skip to logs</a>
@@ -38,14 +43,21 @@
       </div>
     </header>
     <div class="flex min-h-0 flex-1 flex-col md:flex-row">
-      <aside class="flex max-h-60 w-full shrink-0 flex-col border-b border-ink-line bg-ink-chrome md:max-h-none md:w-80 md:border-b-0 md:border-r">
-        <div class="shrink-0 px-4 pb-3 pt-4">
-          <div class="flex items-baseline justify-between gap-3">
+      <aside id="host-pane" class="flex max-h-60 w-full shrink-0 flex-col border-b border-ink-line bg-ink-chrome md:max-h-none md:w-80 md:border-b-0 md:border-r">
+        <div class="host-pane-bar flex shrink-0 items-center gap-2 px-3 py-2.5 md:px-4 md:pt-4">
+          <button type="button" id="hosts-toggle" class="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-100" aria-expanded="true" aria-controls="hosts" aria-label="Hide hosts">
+            <svg class="hosts-chevron h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6 3.5 10.5 8 6 12.5"/>
+            </svg>
+          </button>
+          <div class="host-pane-label flex min-w-0 flex-1 items-baseline justify-between gap-3">
             <h2 class="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">Hosts</h2>
             <span id="host-count" class="font-mono text-[11px] tabular-nums text-slate-400"></span>
           </div>
+        </div>
+        <div class="host-pane-rest mt-1 shrink-0 px-4 pb-3">
           <label class="sr-only" for="host-q">Search hosts</label>
-          <div class="relative mt-3">
+          <div class="relative">
             <svg class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
               <circle cx="7" cy="7" r="4.25"/>
               <path d="M10.5 10.5 13.5 13.5"/>
@@ -55,7 +67,7 @@
         </div>
         <div id="hosts" class="min-h-0 flex-1 overflow-y-auto pb-4" aria-label="Hosts"></div>
       </aside>
-      <section class="flex min-h-0 min-w-0 flex-1 flex-col bg-ink-bg">
+      <section id="log-pane" class="flex min-h-0 min-w-0 flex-1 flex-col bg-ink-bg">
         <div class="flex shrink-0 flex-col gap-2.5 border-b border-ink-line bg-ink-chrome px-4 py-3">
           <div id="chips" class="flex min-w-0 items-center overflow-x-auto" role="toolbar" aria-label="Containers"></div>
           <div class="flex flex-wrap items-center gap-2">

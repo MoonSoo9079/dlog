@@ -237,27 +237,71 @@ select:focus-visible {
   box-shadow: inset 2px 0 0 #c4897c;
 }
 
-@media (max-width: 767px) {
+#log-pane {
+  container-name: logs;
+  container-type: inline-size;
+}
+
+/* The message is the only flexible column. Below this width it becomes a
+   thin strip, so the message takes the whole row instead of wrapping there. */
+@container logs (max-width: 54rem) {
   .log-head {
     display: none;
   }
 
   .log-line.log-cols {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
-      "ts stream"
-      "name name"
-      "msg msg";
+      "ts name stream"
+      "msg msg msg";
+    column-gap: 0.75rem;
     row-gap: 0.15rem;
-    align-items: center;
-    padding-top: 0.5rem;
-    padding-bottom: 0.5rem;
+    align-items: baseline;
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
   }
 
   .log-line .ts { grid-area: ts; }
-  .log-line .name { grid-area: name; overflow: visible; white-space: normal; text-overflow: unset; }
+  .log-line .name { grid-area: name; }
   .log-line .stream { grid-area: stream; justify-self: end; }
-  .log-line .msg { grid-area: msg; }
+  .log-line .msg {
+    grid-area: msg;
+    overflow-wrap: break-word;
+  }
+}
+
+#host-pane {
+  transition: width 150ms ease-in-out;
+}
+
+.hosts-chevron {
+  transform: rotate(180deg);
+  transition: transform 150ms ease-in-out;
+}
+
+html.hosts-collapsed .hosts-chevron {
+  transform: none;
+}
+
+html.hosts-collapsed #host-pane .host-pane-rest,
+html.hosts-collapsed #host-pane #hosts {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  html.hosts-collapsed #host-pane {
+    width: 2.75rem;
+  }
+
+  html.hosts-collapsed #host-pane .host-pane-label {
+    display: none;
+  }
+
+  html.hosts-collapsed #host-pane .host-pane-bar {
+    justify-content: center;
+    padding-right: 0;
+    padding-left: 0;
+  }
 }
 
 .ui-select {
