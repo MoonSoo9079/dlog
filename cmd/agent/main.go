@@ -57,21 +57,20 @@ func parseConfig(args []string) (parsed, error) {
 	var (
 		hostnameFile string
 		exclude      string
-		certFile     string
-		keyFile      string
+		pskID        string
+		pskKey       string
 		batch        int
 		buffer       int
 		level        string
 	)
 	out := parsed{agent: agent.Config{Since: since, FlushInterval: flush, HeartbeatInterval: heartbeat}}
 	fs.StringVar(&out.agent.ServerURL, "server", cli.Env("DLOG_SERVER_URL", ""), "dlog server base URL")
-	fs.StringVar(&certFile, "agent-cert", cli.Env("DLOG_AGENT_CERT", ""), "shared agent certificate, the same file on every agent")
-	fs.StringVar(&keyFile, "agent-key", cli.Env("DLOG_AGENT_KEY", ""), "private key for the shared agent certificate")
+	fs.StringVar(&pskID, "psk-id", cli.Env("DLOG_PSK_ID", ""), "shared PSK id, the same value on every agent")
+	fs.StringVar(&pskKey, "psk-key", cli.Env("DLOG_PSK_KEY", ""), "shared PSK key, the same value on every agent")
 	fs.StringVar(&out.agent.Hostname, "hostname", cli.Env("DLOG_HOSTNAME", ""), "stable name of this machine")
 	fs.StringVar(&hostnameFile, "hostname-file", cli.Env("DLOG_HOSTNAME_FILE", ""), "file whose contents are the hostname, for example a mounted /etc/hostname")
 	fs.StringVar(&out.agent.StateDir, "state-dir", cli.Env("DLOG_STATE_DIR", "data/agent"), "directory for the host token and log cursors")
 	fs.StringVar(&out.agent.DockerHost, "docker-host", cli.Env("DLOG_DOCKER_HOST", "/var/run/docker.sock"), "Docker socket path or unix:// URL")
-	fs.StringVar(&out.agent.CAFile, "ca-file", cli.Env("DLOG_CA_FILE", ""), "PEM CA bundle used to verify the server")
 	fs.IntVar(&batch, "batch", envInt("DLOG_BATCH", 200), "lines per ingest request")
 	fs.IntVar(&buffer, "buffer", envInt("DLOG_BUFFER", 10000), "maximum unsent lines kept in memory")
 	fs.BoolVar(&out.agent.IncludeSelf, "include-self", cli.EnvBool("DLOG_INCLUDE_SELF", false), "also ship this agent container's own logs")
@@ -104,14 +103,14 @@ func parseConfig(args []string) (parsed, error) {
 	if err := fs.Parse(args); err != nil {
 		return parsed{}, err
 	}
-	if certFile == "" || keyFile == "" {
-		return parsed{}, errors.New("agent certificate and key are required")
+	if pskID == "" || pskKey == "" {
+		return parsed{}, errors.New("psk id and key are required")
 	}
-	pair, err := agentcred.LoadPair(certFile, keyFile)
+	psk, err := agentcred.Parse(pskID, pskKey)
 	if err != nil {
 		return parsed{}, err
 	}
-	out.agent.AgentCert = pair
+	out.agent.PSK = *psk
 	out.agent.BatchSize = batch
 	out.agent.MaxBuffer = buffer
 	out.level = level

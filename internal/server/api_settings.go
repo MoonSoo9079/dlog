@@ -1,13 +1,10 @@
 package server
 
 import (
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"dlog/internal/agentcred"
 	"dlog/internal/cli"
@@ -260,34 +257,23 @@ func (s *Server) handleDismissPending(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleCertificate(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.certificateView(false))
+func (s *Server) handlePSK(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.pskView(false))
 }
 
-func (s *Server) handleCertificatePEM(w http.ResponseWriter, r *http.Request) {
-	cert := s.certificate()
-	if cert == nil {
-		writeError(w, http.StatusNotFound, "not found")
-		return
-	}
-	w.Header().Set("Content-Type", "application/x-pem-file")
-	w.Header().Set("Content-Disposition", `attachment; filename="agent.crt"`)
-	_, _ = w.Write(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}))
-}
-
-func (s *Server) handleReplaceCertificate(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleReplacePSK(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Action  string `json:"action"`
-		CertPEM string `json:"cert_pem"`
-		KeyPEM  string `json:"key_pem"`
+		Action string `json:"action"`
+		ID     string `json:"psk_id"`
+		Key    string `json:"psk_key"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, statusForDecode(err), "bad request")
 		return
 	}
-	certPath, keyPath := s.certFiles()
-	if certPath == "" || keyPath == "" {
-		writeError(w, http.StatusBadRequest, "certificate storage is not configured")
+	idPath, keyPath := s.pskFiles()
+	if idPath == "" || keyPath == "" {
+		writeError(w, http.StatusBadRequest, "psk storage is not configured")
 		return
 	}
 	var key *agentcred.Key
@@ -296,69 +282,45 @@ func (s *Server) handleReplaceCertificate(w http.ResponseWriter, r *http.Request
 	case "generate":
 		key, err = agentcred.Generate()
 	case "replace":
-		key, err = agentcred.ParsePair([]byte(body.CertPEM), []byte(body.KeyPEM))
+		key, err = agentcred.Parse(body.ID, body.Key)
 	default:
 		writeError(w, http.StatusBadRequest, "invalid action")
 		return
 	}
 	if err != nil {
-		slog.Warn("certificate rejected", "err", err)
-		writeError(w, http.StatusBadRequest, "invalid certificate")
+		slog.Warn("psk rejected", "err", err)
+		writeError(w, http.StatusBadRequest, "invalid psk")
 		return
 	}
-	if err := key.Write(certPath, keyPath); err != nil {
-		slog.Error("write certificate", "err", err)
+	if err := key.Write(idPath, keyPath); err != nil {
+		slog.Error("write psk", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	s.setCertificate(key.Certificate())
-	slog.Info("agent certificate replaced", "sha256", agentcred.Fingerprint(key.Certificate()), "generated", body.Action == "generate")
-	view := s.certificateView(true)
-	if body.Action == "generate" {
-		view.KeyPEM = string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: mustMarshalKey(key)}))
-	}
-	writeJSON(w, http.StatusOK, view)
+	s.setPSK(key)
+	slog.Info("agent psk replaced", "id", key.ID(), "sha256", agentcred.Fingerprint(key), "generated", body.Action == "generate")
+	writeJSON(w, http.StatusOK, s.pskView(body.Action == "generate"))
 }
 
-func (s *Server) certificateView(includeCert bool) certificateView {
-	cert := s.certificate()
-	certPath, keyPath := s.certFiles()
-	view := certificateView{CertPath: certPath, KeyPath: keyPath}
-	if cert == nil {
+func (s *Server) pskView(includeKey bool) pskView {
+	key := s.psk()
+	idPath, keyPath := s.pskFiles()
+	view := pskView{IDPath: idPath, KeyPath: keyPath}
+	if key == nil {
 		return view
 	}
-	view.Fingerprint = agentcred.Fingerprint(cert)
-	view.Subject = certSubject(cert)
-	view.NotBefore = cert.NotBefore.UTC()
-	view.NotAfter = cert.NotAfter.UTC()
-	if includeCert {
-		view.CertPEM = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}))
+	view.ID = key.ID()
+	view.Fingerprint = agentcred.Fingerprint(key)
+	if includeKey {
+		view.Key = key.Text()
 	}
 	return view
 }
 
-type certificateView struct {
-	Fingerprint string    `json:"fingerprint"`
-	Subject     string    `json:"subject"`
-	NotBefore   time.Time `json:"not_before"`
-	NotAfter    time.Time `json:"not_after"`
-	CertPath    string    `json:"cert_path,omitempty"`
-	KeyPath     string    `json:"key_path,omitempty"`
-	CertPEM     string    `json:"cert_pem,omitempty"`
-	KeyPEM      string    `json:"key_pem,omitempty"`
-}
-
-func certSubject(cert *x509.Certificate) string {
-	if cert.Subject.CommonName != "" {
-		return cert.Subject.CommonName
-	}
-	return cert.Subject.String()
-}
-
-func mustMarshalKey(key *agentcred.Key) []byte {
-	der, err := key.PrivateDER()
-	if err != nil {
-		return nil
-	}
-	return der
+type pskView struct {
+	ID          string `json:"id"`
+	Fingerprint string `json:"fingerprint"`
+	IDPath      string `json:"id_path,omitempty"`
+	KeyPath     string `json:"key_path,omitempty"`
+	Key         string `json:"psk_key,omitempty"`
 }

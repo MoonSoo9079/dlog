@@ -1,18 +1,19 @@
 # Agent only, for a Docker host that should ship logs to an existing server.
 # From the repo root:
-# Copy agent.crt and agent.key from the server (the same files on every host).
 #   DLOG_SERVER_URL=https://logs.example.com \
 #   DLOG_HOSTNAME=web-01 \
-#   DLOG_AGENT_CERT_FILE=./agent.crt \
-#   DLOG_AGENT_KEY_FILE=./agent.key \
+#   DLOG_PSK_ID="$(cat psk.id)" \
+#   DLOG_PSK_KEY="$(cat psk.key)" \
 #   docker compose -f deploy/agent-compose.yaml up -d --build
-# DLOG_AGENT_CERT_FILE and DLOG_AGENT_KEY_FILE are paths on the host.
-# Inside the container the agent reads DLOG_AGENT_CERT and DLOG_AGENT_KEY.
+# DLOG_PSK_ID and DLOG_PSK_KEY are the id and the key, the same values on
+# every agent. When the server generates a key it writes those values to
+# psk.id and psk.key in its data directory.
 # Every DLOG_* variable the agent reads is listed below. Defaults match the process.
-# DLOG_AGENT_CERT, DLOG_AGENT_KEY, and DLOG_STATE_DIR stay on the mounted paths.
+# DLOG_STATE_DIR stays on the state volume.
 # DLOG_HOSTNAME_FILE is read only when DLOG_HOSTNAME is empty. This file still
 # requires DLOG_HOSTNAME, because a recreated container gets a new hostname.
-# For a private CA, mount the PEM and set DLOG_CA_FILE to that path in the container.
+# A public server certificate uses the system trust store. A self-signed
+# certificate is accepted when its name matches DLOG_SERVER_URL.
 # For Podman, mount its API socket on /var/run/docker.sock, or set DLOG_DOCKER_HOST
 # to the socket path inside the container and mount that socket there.
 services:
@@ -26,17 +27,14 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - dlog-agent:/var/lib/dlog-agent
-      - ${DLOG_AGENT_CERT_FILE:?copy agent.crt from the server}:/etc/dlog/agent.crt:ro
-      - ${DLOG_AGENT_KEY_FILE:?copy agent.key from the server}:/etc/dlog/agent.key:ro
     environment:
       DLOG_SERVER_URL: ${DLOG_SERVER_URL:?set DLOG_SERVER_URL}
-      DLOG_AGENT_CERT: /etc/dlog/agent.crt
-      DLOG_AGENT_KEY: /etc/dlog/agent.key
+      DLOG_PSK_ID: ${DLOG_PSK_ID:?set DLOG_PSK_ID}
+      DLOG_PSK_KEY: ${DLOG_PSK_KEY:?set DLOG_PSK_KEY}
       DLOG_HOSTNAME: ${DLOG_HOSTNAME:?set DLOG_HOSTNAME}
       DLOG_HOSTNAME_FILE: ${DLOG_HOSTNAME_FILE:-}
       DLOG_STATE_DIR: /var/lib/dlog-agent
       DLOG_DOCKER_HOST: ${DLOG_DOCKER_HOST:-/var/run/docker.sock}
-      DLOG_CA_FILE: ${DLOG_CA_FILE:-}
       DLOG_SINCE: ${DLOG_SINCE:-10m}
       DLOG_BATCH: ${DLOG_BATCH:-200}
       DLOG_FLUSH: ${DLOG_FLUSH:-1s}

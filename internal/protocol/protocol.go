@@ -57,7 +57,7 @@ type HeartbeatResponse struct {
 	Status string `json:"status"`
 }
 
-// RegisterRequest is signed by the shared agent certificate.
+// RegisterRequest is signed by the shared pre-shared key.
 // Timestamp limits how long a captured request can be replayed.
 type RegisterRequest struct {
 	Hostname     string    `json:"hostname"`

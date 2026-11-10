@@ -2,11 +2,11 @@ package server
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	"net/http"
 	"sync"
 	"time"
 
+	"dlog/internal/agentcred"
 	"dlog/internal/version"
 )
 
@@ -17,20 +17,20 @@ const (
 
 type Server struct {
 	store        *Store
-	certMu       sync.RWMutex
-	agentCert    *x509.Certificate
-	certPath     string
-	keyPath      string
+	pskMu        sync.RWMutex
+	agentPSK     *agentcred.Key
+	pskIDPath    string
+	pskKeyPath   string
 	trustProxy   bool
 	secureCookie bool
 	login        *slidingLimit
 	regLimit     *slidingLimit
 }
 
-func New(store *Store, agentCert *x509.Certificate, trustProxy, secureCookie bool) *Server {
+func New(store *Store, psk *agentcred.Key, trustProxy, secureCookie bool) *Server {
 	return &Server{
 		store:        store,
-		agentCert:    agentCert,
+		agentPSK:     psk,
 		trustProxy:   trustProxy,
 		secureCookie: secureCookie,
 		login:        &slidingLimit{},
@@ -72,9 +72,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/admin/directory/test", s.adminJSON(s.handleTestDirectory))
 	mux.HandleFunc("POST /api/v1/admin/pending/{hostname}/approve", s.adminJSON(s.handleApprovePending))
 	mux.HandleFunc("DELETE /api/v1/admin/pending/{hostname}", s.adminJSON(s.handleDismissPending))
-	mux.HandleFunc("GET /api/v1/admin/certificate", s.adminJSON(s.handleCertificate))
-	mux.HandleFunc("GET /api/v1/admin/certificate.pem", s.adminJSON(s.handleCertificatePEM))
-	mux.HandleFunc("POST /api/v1/admin/certificate", s.adminJSON(s.handleReplaceCertificate))
+	mux.HandleFunc("GET /api/v1/admin/psk", s.adminJSON(s.handlePSK))
+	mux.HandleFunc("POST /api/v1/admin/psk", s.adminJSON(s.handleReplacePSK))
 
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /admin", s.handleAdmin)
@@ -92,30 +91,30 @@ func (s *Server) Handler() http.Handler {
 	return securityHeaders(mux)
 }
 
-// SetCertFiles records where a replaced agent certificate is written.
-func (s *Server) SetCertFiles(certPath, keyPath string) {
-	s.certMu.Lock()
-	s.certPath = certPath
-	s.keyPath = keyPath
-	s.certMu.Unlock()
+// SetPSKFiles records where a replaced agent key is written.
+func (s *Server) SetPSKFiles(idPath, keyPath string) {
+	s.pskMu.Lock()
+	s.pskIDPath = idPath
+	s.pskKeyPath = keyPath
+	s.pskMu.Unlock()
 }
 
-func (s *Server) certificate() *x509.Certificate {
-	s.certMu.RLock()
-	defer s.certMu.RUnlock()
-	return s.agentCert
+func (s *Server) psk() *agentcred.Key {
+	s.pskMu.RLock()
+	defer s.pskMu.RUnlock()
+	return s.agentPSK
 }
 
-func (s *Server) setCertificate(cert *x509.Certificate) {
-	s.certMu.Lock()
-	s.agentCert = cert
-	s.certMu.Unlock()
+func (s *Server) setPSK(key *agentcred.Key) {
+	s.pskMu.Lock()
+	s.agentPSK = key
+	s.pskMu.Unlock()
 }
 
-func (s *Server) certFiles() (string, string) {
-	s.certMu.RLock()
-	defer s.certMu.RUnlock()
-	return s.certPath, s.keyPath
+func (s *Server) pskFiles() (string, string) {
+	s.pskMu.RLock()
+	defer s.pskMu.RUnlock()
+	return s.pskIDPath, s.pskKeyPath
 }
 
 func (s *Server) sessionLength() time.Duration {

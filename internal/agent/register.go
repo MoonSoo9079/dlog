@@ -48,7 +48,7 @@ func (a *Agent) register(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	sig, err := agentcred.Sign(a.cfg.AgentCert, body)
+	sig, err := agentcred.Sign(&a.cfg.PSK, body)
 	if err != nil {
 		return err
 	}

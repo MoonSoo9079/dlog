@@ -211,7 +211,7 @@ function initApp() {
       const scoped = viewer && viewer.role !== "admin" && !viewer.all_hosts;
       const msg = scoped
         ? "No hosts in your groups."
-        : "No hosts yet. Start an agent with the shared certificate and it will register itself.";
+        : "No hosts yet. Start an agent with the shared key and it will register itself.";
       hostsEl.append(el("p", { class: "px-4 py-6 text-[13px] leading-relaxed text-slate-400" }, [msg]));
     } else if (!visible.length && !showedGroup) {
       hostsEl.append(el("p", { class: "px-4 py-6 text-[13px] leading-relaxed text-slate-400" }, ["No matching hosts."]));
@@ -458,7 +458,7 @@ function initApp() {
       emptyHint.textContent = "The container, stream, and time filters all apply. Older loads the previous page.";
     } else {
       emptyTitle.textContent = "Select a host";
-      emptyHint.textContent = "Hosts appear after an agent registers with the shared certificate.";
+      emptyHint.textContent = "Hosts appear after an agent registers with the shared key.";
     }
   }
 
@@ -575,7 +575,7 @@ function initAdmin() {
   const generalForm = document.getElementById("save-general");
   const registrationForm = document.getElementById("save-registration");
   const directoryForm = document.getElementById("save-directory");
-  const sections = ["hosts", "general", "registration", "certificate", "groups", "accounts", "directory"];
+  const sections = ["hosts", "general", "registration", "psk", "groups", "accounts", "directory"];
   let hosts = [];
   let groups = [];
   let savedSettings = null;
@@ -684,8 +684,8 @@ function initAdmin() {
       button.textContent = label;
     }
   });
-  document.getElementById("generate-cert").addEventListener("click", generateCert);
-  document.getElementById("replace-cert").addEventListener("submit", replaceCert);
+  document.getElementById("generate-psk").addEventListener("click", generatePSK);
+  document.getElementById("replace-psk").addEventListener("submit", replacePSK);
   loadFleet(true);
   loadSettings();
   setInterval(() => { if (!document.hidden) loadFleet(false); }, 5000);
@@ -764,7 +764,7 @@ function initAdmin() {
     const visible = hosts.filter((h) => matches(h, query));
     hostList.replaceChildren();
     if (!visible.length) {
-      const msg = hosts.length ? "No matching hosts." : "No hosts yet. Start an agent with the shared certificate and it will register itself.";
+      const msg = hosts.length ? "No matching hosts." : "No hosts yet. Start an agent with the shared key and it will register itself.";
       hostList.append(el("div", { class: emptyRow }, [msg]));
       return;
     }
@@ -934,12 +934,12 @@ function initAdmin() {
 
   async function loadSettings() {
     try {
-      const [data, cert] = await Promise.all([
+      const [data, psk] = await Promise.all([
         api("/api/v1/admin/settings"),
-        api("/api/v1/admin/certificate"),
+        api("/api/v1/admin/psk"),
       ]);
       fillSettings(data);
-      paintCert(cert);
+      paintPSK(psk);
     } catch (err) {
       if (err.message !== "unauthorized") toast(err.message);
     }
@@ -1023,60 +1023,57 @@ function initAdmin() {
     }
   }
 
-  function paintCert(info) {
-    document.getElementById("cert-fingerprint").textContent = info && info.fingerprint ? info.fingerprint : "";
-    const until = info && info.not_after ? new Date(info.not_after) : null;
-    document.getElementById("cert-expiry").textContent = until && !Number.isNaN(until.getTime()) ? "Valid until " + until.toLocaleString() : "";
-    const paths = document.getElementById("cert-paths");
-    paths.textContent = info && info.cert_path ? info.cert_path + "  ·  " + info.key_path : "";
+  function paintPSK(info) {
+    document.getElementById("psk-id").textContent = info && info.id ? info.id : "";
+    document.getElementById("psk-fingerprint").textContent = info && info.fingerprint ? info.fingerprint : "";
+    const paths = document.getElementById("psk-paths");
+    paths.textContent = info && info.id_path ? info.id_path + "  ·  " + info.key_path : "";
   }
 
-  async function generateCert() {
-    if (!confirm("Generate a new agent certificate? Agents cannot register until they have the new certificate and key. Hosts that already have a token keep sending logs.")) return;
+  async function generatePSK() {
+    if (!confirm("Generate a new shared key? Agents cannot register until they have the new id and key. Hosts that already have a token keep sending logs.")) return;
     try {
-      const info = await api("/api/v1/admin/certificate", { method: "POST", body: JSON.stringify({ action: "generate" }) });
-      paintCert(info);
-      showIssuedCert(info);
-      toast("New certificate is ready. Download the key before you leave this page.");
+      const info = await api("/api/v1/admin/psk", { method: "POST", body: JSON.stringify({ action: "generate" }) });
+      paintPSK(info);
+      showIssuedPSK(info);
+      toast("New key is ready. Download it before you leave this page.");
     } catch (err) {
       toast(err.message);
     }
   }
 
-  function showIssuedCert(info) {
-    const once = document.getElementById("cert-once");
-    const certBtn = el("button", { type: "button", class: btnGhost }, ["Download certificate"]);
-    const keyBtn = el("button", { type: "button", class: btnPrimary }, ["Download private key"]);
-    certBtn.addEventListener("click", () => downloadText("agent.crt", info.cert_pem || ""));
-    keyBtn.addEventListener("click", () => downloadText("agent.key", info.key_pem || ""));
+  function showIssuedPSK(info) {
+    const once = document.getElementById("psk-once");
+    const idBtn = el("button", { type: "button", class: btnGhost }, ["Download psk.id"]);
+    const keyBtn = el("button", { type: "button", class: btnPrimary }, ["Download psk.key"]);
+    idBtn.addEventListener("click", () => downloadText("psk.id", (info.id || "") + "\n"));
+    keyBtn.addEventListener("click", () => downloadText("psk.key", (info.psk_key || "") + "\n"));
     once.replaceChildren(
-      el("p", { class: "text-[13px] leading-relaxed text-amber-300" }, ["Download the private key now. A later visit to this page does not show it again. The same files are stored on the server."]),
-      el("div", { class: "mt-3 flex flex-wrap gap-2" }, [certBtn, keyBtn]),
+      el("p", { class: "text-[13px] leading-relaxed text-amber-300" }, ["Download the key now, or copy both values. A later visit does not show the key again. Set the same DLOG_PSK_ID and DLOG_PSK_KEY on every agent."]),
+      el("div", { class: "mt-3 flex flex-wrap gap-2" }, [idBtn, keyBtn]),
     );
     once.hidden = false;
   }
 
-  async function replaceCert(e) {
+  async function replacePSK(e) {
     e.preventDefault();
-    const certFile = document.getElementById("cert-file").files && document.getElementById("cert-file").files[0];
-    const keyFile = document.getElementById("key-file").files && document.getElementById("key-file").files[0];
-    if (!certFile || !keyFile) {
-      toast("Choose a certificate and a private key");
+    const id = document.getElementById("psk-replace-id").value.trim();
+    const key = document.getElementById("psk-replace-key").value.trim();
+    if (!id || !key) {
+      toast("Enter an id and a key");
       return;
     }
-    if (!confirm("Replace the agent certificate? Agents cannot register until they have this certificate and key. Hosts that already have a token keep sending logs.")) return;
+    if (!confirm("Replace the shared key? Agents cannot register until they have this id and key. Hosts that already have a token keep sending logs.")) return;
     try {
-      const certPEM = await certFile.text();
-      const keyPEM = await keyFile.text();
-      const info = await api("/api/v1/admin/certificate", {
+      const info = await api("/api/v1/admin/psk", {
         method: "POST",
-        body: JSON.stringify({ action: "replace", cert_pem: certPEM, key_pem: keyPEM }),
+        body: JSON.stringify({ action: "replace", psk_id: id, psk_key: key }),
       });
       e.target.reset();
-      document.getElementById("cert-once").hidden = true;
-      document.getElementById("cert-once").replaceChildren();
-      paintCert(info);
-      toast("Certificate replaced. Install it on every agent.");
+      document.getElementById("psk-once").hidden = true;
+      document.getElementById("psk-once").replaceChildren();
+      paintPSK(info);
+      toast("Key replaced. Set the same id and key on every agent.");
     } catch (err) {
       toast(err.message);
     }

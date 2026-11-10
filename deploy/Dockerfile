@@ -30,7 +30,5 @@ FROM alpine:3.22 AS agent
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/dlog-agent /usr/local/bin/dlog-agent
 ENV DLOG_STATE_DIR=/var/lib/dlog-agent \
-    DLOG_DOCKER_HOST=/var/run/docker.sock \
-    DLOG_AGENT_CERT=/etc/dlog/agent.crt \
-    DLOG_AGENT_KEY=/etc/dlog/agent.key
+    DLOG_DOCKER_HOST=/var/run/docker.sock
 ENTRYPOINT ["/usr/local/bin/dlog-agent"]

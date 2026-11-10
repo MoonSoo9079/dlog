@@ -27,7 +27,7 @@ func testServer(t *testing.T) (*httptest.Server, *Store, *agentcred.Key) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := New(st, key.Certificate(), false, false).Handler()
+	h := New(st, key, false, false).Handler()
 	ts := httptest.NewServer(h)
 	t.Cleanup(ts.Close)
 	return ts, st, key
@@ -176,7 +176,7 @@ func TestHTTPAuthIngestAndUI(t *testing.T) {
 	res = do(t, client, http.MethodGet, ts.URL+"/app.js", "", "")
 	js, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 200 || strings.Contains(string(js), "enroll-tokens") || !strings.Contains(string(js), "certificate") {
+	if res.StatusCode != 200 || strings.Contains(string(js), "enroll-tokens") || !strings.Contains(string(js), "/api/v1/admin/psk") {
 		t.Fatalf("console script: %d", res.StatusCode)
 	}
 
@@ -274,7 +274,7 @@ func TestHTTPLogsAndDisable(t *testing.T) {
 	res = register(t, client, ts.URL, other, "node-10", time.Now())
 	res.Body.Close()
 	if res.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("wrong certificate: %d", res.StatusCode)
+		t.Fatalf("wrong psk: %d", res.StatusCode)
 	}
 	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/hosts/"+first.HostID+"/disable", admin, "")
 	res.Body.Close()
@@ -793,7 +793,7 @@ func TestUserGroupAccess(t *testing.T) {
 	}
 }
 
-func TestSettingsRegistrationAndCertificate(t *testing.T) {
+func TestSettingsRegistrationAndPSK(t *testing.T) {
 	dir := t.TempDir()
 	st := testStore(t)
 	if _, err := st.CreateUser("admin", testAdminPassword, RoleAdmin); err != nil {
@@ -806,13 +806,13 @@ func TestSettingsRegistrationAndCertificate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	certPath := filepath.Join(dir, "agent.crt")
-	keyPath := filepath.Join(dir, "agent.key")
-	if err := key.Write(certPath, keyPath); err != nil {
+	idPath := filepath.Join(dir, "psk.id")
+	keyPath := filepath.Join(dir, "psk.key")
+	if err := key.Write(idPath, keyPath); err != nil {
 		t.Fatal(err)
 	}
-	api := New(st, key.Certificate(), false, false)
-	api.SetCertFiles(certPath, keyPath)
+	api := New(st, key, false, false)
+	api.SetPSKFiles(idPath, keyPath)
 	ts := httptest.NewServer(api.Handler())
 	t.Cleanup(ts.Close)
 	client := noRedirect(t)
@@ -833,7 +833,7 @@ func TestSettingsRegistrationAndCertificate(t *testing.T) {
 	res = do(t, client, http.MethodGet, ts.URL+"/admin", admin, "")
 	page, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != http.StatusOK || !strings.Contains(string(page), "Automatic registration") || !strings.Contains(string(page), `id="panel-registration"`) || !strings.Contains(string(page), `id="panel-certificate"`) || !strings.Contains(string(page), `id="accounts"`) || !strings.Contains(string(page), `id="create-group"`) || !strings.Contains(string(page), `id="test-directory"`) {
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(page), "Automatic registration") || !strings.Contains(string(page), `id="panel-registration"`) || !strings.Contains(string(page), `id="panel-psk"`) || strings.Contains(string(page), `id="panel-certificate"`) || !strings.Contains(string(page), `id="accounts"`) || !strings.Contains(string(page), `id="create-group"`) || !strings.Contains(string(page), `id="test-directory"`) {
 		t.Fatalf("settings page: %d", res.StatusCode)
 	}
 
@@ -917,46 +917,75 @@ func TestSettingsRegistrationAndCertificate(t *testing.T) {
 		t.Fatalf("default group remained: %s", body)
 	}
 
-	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/admin/certificate", admin, "")
-	body, _ = io.ReadAll(res.Body)
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/admin/psk", user, "")
 	res.Body.Close()
-	oldPrint := agentcred.Fingerprint(key.Certificate())
-	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), oldPrint) || strings.Contains(string(body), "PRIVATE KEY") {
-		t.Fatalf("certificate info: %d %s", res.StatusCode, body)
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("user psk: %d", res.StatusCode)
 	}
-	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/certificate", admin, `{"action":"generate"}`)
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/admin/psk", admin, "")
 	body, _ = io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), "PRIVATE KEY") || strings.Contains(string(body), oldPrint) {
+	oldPrint := agentcred.Fingerprint(key)
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), oldPrint) || !strings.Contains(string(body), key.ID()) || strings.Contains(string(body), key.Text()) {
+		t.Fatalf("psk info: %d %s", res.StatusCode, body)
+	}
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/psk", admin, `{"action":"generate"}`)
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"psk_key"`) || strings.Contains(string(body), oldPrint) {
 		t.Fatalf("generate: %d %s", res.StatusCode, body)
 	}
 	var issued struct {
+		ID          string `json:"id"`
 		Fingerprint string `json:"fingerprint"`
-		CertPEM     string `json:"cert_pem"`
-		KeyPEM      string `json:"key_pem"`
+		Key         string `json:"psk_key"`
 	}
 	if err := json.Unmarshal(body, &issued); err != nil {
 		t.Fatal(err)
 	}
-	rotated, err := agentcred.ParsePair([]byte(issued.CertPEM), []byte(issued.KeyPEM))
+	rotated, err := agentcred.Parse(issued.ID, issued.Key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if agentcred.Fingerprint(rotated.Certificate()) != issued.Fingerprint {
-		t.Fatalf("fingerprint mismatch")
+	if agentcred.Fingerprint(rotated) != issued.Fingerprint {
+		t.Fatal("fingerprint mismatch")
 	}
-	res = register(t, client, ts.URL, key, "old-cert-host", time.Now())
+	res = register(t, client, ts.URL, key, "old-psk-host", time.Now())
 	res.Body.Close()
 	if res.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("old certificate still trusted: %d", res.StatusCode)
+		t.Fatalf("old psk still trusted: %d", res.StatusCode)
 	}
 	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/settings", admin, `{"auto_register":true}`)
 	res.Body.Close()
-	res = register(t, client, ts.URL, rotated, "new-cert-host", time.Now())
+	res = register(t, client, ts.URL, rotated, "new-psk-host", time.Now())
 	body, _ = io.ReadAll(res.Body)
 	res.Body.Close()
 	if res.StatusCode != http.StatusCreated || !strings.Contains(string(body), "ht_") {
-		t.Fatalf("new certificate: %d %s", res.StatusCode, body)
+		t.Fatalf("new psk: %d %s", res.StatusCode, body)
+	}
+	replacement, err := agentcred.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(map[string]string{"action": "replace", "psk_id": replacement.ID(), "psk_key": replacement.Text()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/psk", admin, string(payload))
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || strings.Contains(string(body), replacement.Text()) || !strings.Contains(string(body), replacement.ID()) {
+		t.Fatalf("replace: %d %s", res.StatusCode, body)
+	}
+	res = register(t, client, ts.URL, rotated, "rotated-away", time.Now())
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("replaced psk still trusted: %d", res.StatusCode)
+	}
+	res = register(t, client, ts.URL, replacement, "replaced-host", time.Now())
+	res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("replaced psk: %d", res.StatusCode)
 	}
 }
 
@@ -966,7 +995,7 @@ func register(t *testing.T, client *http.Client, base string, key *agentcred.Key
 	if err != nil {
 		t.Fatal(err)
 	}
-	sig, err := agentcred.Sign(key.Pair(), body)
+	sig, err := agentcred.Sign(key, body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -976,6 +1005,7 @@ func register(t *testing.T, client *http.Client, base string, key *agentcred.Key
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set(agentcred.IDHeader, key.ID())
 	req.Header.Set(agentcred.Header, sig)
 	res, err := client.Do(req)
 	if err != nil {

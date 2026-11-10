@@ -6,25 +6,25 @@ The agent does not listen on a port. It only dials the server you configure, the
 
 ## Authorization
 
-Every agent carries the same certificate and private key. That certificate is what authorizes automatic registration. The agent signs a registration request with its hostname. The server checks the signature against the certificate it trusts and creates the host if the name is new. An existing enabled host is accepted again, so a rebuilt agent with an empty state directory comes back without an operator copying a key. A disabled host stays disabled.
+Every agent carries the same pre-shared key. That key is what authorizes automatic registration. The agent signs a registration request with its hostname. The server checks the signature against the key it trusts and creates the host if the name is new. An existing enabled host is accepted again, so a rebuilt agent with an empty state directory comes back without an operator copying a host token. A disabled host stays disabled.
 
-You do not create hosts by hand, and you do not put a per-host deploy key on the agent. Copy `agent.crt` and `agent.key` once. Those two files are identical on every agent. `DLOG_HOSTNAME` is the host's name and must stay stable.
+You do not create hosts by hand, and you do not put a per-host deploy key on the agent. Set the same `DLOG_PSK_ID` and `DLOG_PSK_KEY` on every agent. `DLOG_HOSTNAME` is the host's name and must stay stable.
 
-On first registration the server gives the agent a host token. The agent stores it in its state directory and sends it on later requests. That token is not an install step. If it stops working, the agent signs a new registration with the same certificate and replaces it.
+On first registration the server gives the agent a host token. The agent stores it in its state directory and sends it on later requests. That token is not an install step. If it stops working, the agent signs a new registration with the same key and replaces it.
 
 | Zabbix | Dlog |
 | --- | --- |
 | Host registered on the server | Host row, created when the agent first registers |
-| Shared credential | One ECDSA P-256 certificate and key, the same on every agent |
+| Shared credential | One pre-shared id and key, the same on every agent |
 | Autoregistration | `POST /api/v1/register`, signed with that key |
 | Active checks | The agent pushes batches. Nothing on the host accepts connections |
 | Enable or disable a host | `enabled` or `disabled`. A disabled host is rejected with HTTP 403 |
 | Availability | Heartbeat every 15 seconds. The console marks a host online when it was seen within the offline window, 45 seconds unless Settings changes it |
-| `TLSCAFile` | `DLOG_CA_FILE`, a PEM bundle the agent uses to verify the server |
+| Server certificate | A public certificate is checked with the system trust store. A self-signed certificate is accepted when its name matches the server URL |
 
-The private key on an agent can register any hostname and can take over an enabled hostname. Protect `agent.key`. Put TLS on the server (`-tls-cert` and `-tls-key`, or a reverse proxy) so a captured registration cannot be replayed after it expires. A registration timestamp is accepted for five minutes.
+The key on an agent can register any hostname and can take over an enabled hostname. Protect the shared key. Put TLS on the server (`-tls-cert` and `-tls-key`, or a reverse proxy) so a captured registration cannot be replayed after it expires. A registration timestamp is accepted for five minutes. A self-signed certificate does not prove the server's identity to a network attacker who can present another certificate for that name. Use a publicly trusted certificate when the path to the server is not trusted.
 
-The first time the server starts without a certificate, it writes `agent.crt` and `agent.key` into the data directory and logs a warning. Settings can generate a new pair or replace the one the server trusts, and that takes effect without a restart. You can also put a new ECDSA P-256 pair in those paths and restart the server. Either way, install the same files on the agents. Hosts that already have a token keep sending logs.
+The first time the server starts with `DLOG_PSK_ID` and `DLOG_PSK_KEY` empty, it writes `psk.id` and `psk.key` into the data directory and logs a warning with the id, those paths, and the key fingerprint. The key itself is not logged. Copy the two values onto every agent as `DLOG_PSK_ID` and `DLOG_PSK_KEY`. Settings can generate a new key or replace the one the server trusts, and that takes effect without a restart. Setting both variables installs that id and key on every start and overwrites the files in the data directory, including a key changed in Settings. The id is 1–64 characters, starting with a letter or digit. The key is 32 bytes, unpadded base64url. Hosts that already have a token keep sending logs.
 
 ## Quick start
 
@@ -40,15 +40,15 @@ DLOG_ADMIN_PASSWORD=local-dev-admin-password \
 
 # second shell, on a machine with a Docker socket
 DLOG_SERVER_URL=http://127.0.0.1:8080 \
-DLOG_AGENT_CERT=data/server/agent.crt \
-DLOG_AGENT_KEY=data/server/agent.key \
+DLOG_PSK_ID="$(cat data/server/psk.id)" \
+DLOG_PSK_KEY="$(cat data/server/psk.key)" \
 DLOG_HOSTNAME="$(hostname)" \
 ./bin/dlog-agent
 ```
 
-Open http://127.0.0.1:8080 and sign in as `admin` with `local-dev-admin-password`. That password is for a local lab. The server logs a warning when it is short, and when it has just generated the agent certificate.
+Open http://127.0.0.1:8080 and sign in as `admin` with `local-dev-admin-password`. That password is for a local lab. The server logs a warning when it is short, and when it has just generated the agent key.
 
-If you do not set a password, the first start creates the admin account, writes the password to `data/server/admin.password`, and prints it once. Later starts leave existing accounts alone. The agent certificate is written beside it as `agent.crt` and `agent.key`.
+If you do not set a password, the first start creates the admin account, writes the password to `data/server/admin.password`, and prints it once. Later starts leave existing accounts alone. When the agent key variables are empty, the server writes `psk.id` and `psk.key` beside that password. Read those files into `DLOG_PSK_ID` and `DLOG_PSK_KEY` on each agent.
 
 ### Containers
 
@@ -56,19 +56,19 @@ If you do not set a password, the first start creates the admin account, writes 
 docker compose up --build
 ```
 
-The lab agent mounts the host Docker socket, so it ships logs from every container on that daemon, not only the compose services. It registers as `dlog-lab` with the certificate the server generates into the `dlog-cred` volume. A `logger` service writes a stdout line and a stderr line every three seconds. Sign in at http://127.0.0.1:8080 as `admin` with `local-dev-admin-password`.
+The lab agent mounts the host Docker socket, so it ships logs from every container on that daemon, not only the compose services. It registers as `dlog-lab` with the same id and key the server is given in `compose.yaml`. A `logger` service writes a stdout line and a stderr line every three seconds. Sign in at http://127.0.0.1:8080 as `admin` with `local-dev-admin-password`.
 
-To run only the agent on another host, copy `agent.crt` and `agent.key` from the server and mount those same files:
+To run only the agent on another host, set the same id and key the server is using:
 
 ```bash
 DLOG_SERVER_URL=https://logs.example.com \
 DLOG_HOSTNAME=web-01 \
-DLOG_AGENT_CERT_FILE=./agent.crt \
-DLOG_AGENT_KEY_FILE=./agent.key \
+DLOG_PSK_ID="$(cat psk.id)" \
+DLOG_PSK_KEY="$(cat psk.key)" \
 docker compose -f deploy/agent-compose.yaml up -d --build
 ```
 
-`DLOG_AGENT_CERT_FILE` and `DLOG_AGENT_KEY_FILE` are the certificate files on the host. Compose mounts them into the container. The agent process reads `DLOG_AGENT_CERT` and `DLOG_AGENT_KEY`, which that compose file sets to the mounted paths.
+`DLOG_PSK_ID` and `DLOG_PSK_KEY` are the id and the key. The agent compose file requires both. `cat` is only a way to read the values the server wrote into `psk.id` and `psk.key`.
 
 To run only the server:
 
@@ -76,11 +76,11 @@ To run only the server:
 docker compose -f deploy/server-compose.yaml up -d --build
 ```
 
-That file publishes host port 8080 to container port 8080 and stores the database in a volume. Leave `DLOG_ADMIN_PASSWORD` unset to generate the first admin password into that volume. Leave the agent certificate variables unset to generate `agent.crt` and `agent.key` there, then copy both files to each agent host. `DLOG_PUBLISH_PORT` changes the host port. It is not a server setting. Leave `DLOG_ADDR` at `:8080` unless you also change the port mapping.
+That file publishes host port 8080 to container port 8080 and stores the database in a volume. Leave `DLOG_ADMIN_PASSWORD` unset to generate the first admin password into that volume. Leave the agent key variables unset to generate `psk.id` and `psk.key` there, then set the same values on each agent. Setting both variables uses that id and key and writes them into the volume on every start. `DLOG_PUBLISH_PORT` changes the host port. It is not a server setting. Leave `DLOG_ADDR` at `:8080` unless you also change the port mapping.
 
-`deploy/agent-compose.yaml` and `deploy/server-compose.yaml` set every `DLOG_` variable the agent and the server read. An unset variable uses the default written in the file. Paths that follow a volume stay on that mount: the agent state directory, the agent certificate and key, and the server data directory. Configuration says what each variable does and why it is set.
+`deploy/agent-compose.yaml` and `deploy/server-compose.yaml` set every `DLOG_` variable the agent and the server read. An unset variable uses the default written in the file. Paths that follow a volume stay on that mount: the agent state directory and the server data directory. Configuration says what each variable does and why it is set.
 
-For a private CA, mount the PEM file and set `DLOG_CA_FILE` to that path inside the container. Podman works too: mount its API socket on `/var/run/docker.sock`, or point `DLOG_DOCKER_HOST` at the socket path inside the container (`unix:///run/podman/podman.sock`, or `$XDG_RUNTIME_DIR/podman/podman.sock` for rootless) and mount that socket there.
+The agent trusts a public server certificate through the system trust store. It also accepts a self-signed certificate when the name on the certificate matches the server URL and the certificate is current. No CA file is required. A certificate signed by a private CA is accepted only when that CA is already in the system trust store. Podman works too: mount its API socket on `/var/run/docker.sock`, or point `DLOG_DOCKER_HOST` at the socket path inside the container (`unix:///run/podman/podman.sock`, or `$XDG_RUNTIME_DIR/podman/podman.sock` for rootless) and mount that socket there.
 
 ### Published images
 
@@ -100,7 +100,7 @@ It skips:
 - names in `DLOG_EXCLUDE` (comma-separated)
 - containers labeled `dlog.exclude=true`
 
-The Docker socket is root-equivalent. The agent container is root for that reason. On the host, the socket is usually mode `0660` and group `docker`; add your user to that group instead of running the agent with sudo. Treat `agent.key` and the state volume as secrets. The key file and the state file are mode `0600`.
+The Docker socket is root-equivalent. The agent container is root for that reason. On the host, the socket is usually mode `0660` and group `docker`; add your user to that group instead of running the agent with sudo. Treat the shared key and the state volume as secrets. On the server, `psk.key` is mode `0600`. The agent state file is mode `0600`.
 
 Lines are buffered in memory (default 10,000). If the server is down, the agent retries with backoff and does not drop the buffer until it is full. Delivery is at-least-once: a crash after the server accepts a batch and before the cursor is saved can send those lines again. The server stores one row for a host, container, stream, millisecond, and message, so that retry does not create a second row. Two identical lines in the same millisecond are stored once.
 
@@ -117,22 +117,22 @@ The console is served by `dlog-server`.
 - Admin opens a page for hosts. There you set a display name, move a host into one group, and disable, enable, or delete a host.
 - General is where an admin changes the server name and the sign-in tagline, how long logs are stored, how long a session lasts, and how soon a quiet host looks offline.
 - Registration turns automatic registration on or off, picks the group new hosts join, and approves a host that registered while that was off.
-- Certificate keeps the shared agent certificate. Generating or replacing it stops new registration until each agent has the new certificate and key. Hosts that already have a token keep sending logs.
+- Shared key keeps the pre-shared id and key. Generating or replacing it stops new registration until each agent has the new id and key. Hosts that already have a token keep sending logs. The key is shown once, when it is generated.
 - Groups is where you create, rename, or delete groups. A user sees every host, or only the groups you tick. Hosts with no group stay visible to admins and to users who can see all hosts. Deleting a group removes it from those users, and the hosts in it leave their view.
 - Accounts is where you create accounts and set each one to User or Admin. Setting an account's password signs that account out. Users can read logs. Admins can manage hosts, groups, accounts, and settings. An admin cannot delete the signed-in account or remove the last admin. A directory account is listed here too. Its password and role come from the directory, and you can still choose which groups it sees or delete the row.
 - Directory turns on sign-in through LDAP. The first successful sign-in creates an account that can see every host. A member of the admin group DN is an admin, and each later sign-in updates that role without changing the groups that account can see. A local account is never replaced, and a wrong local password is not checked against the directory. The bind password is stored with the other settings and is not shown again. Leave it blank when you save to keep it. Test connection checks the form and does not save it. A blank bind password uses the saved one.
 
-Deleting a host deletes its stored logs. The agent will register that hostname again if it still has the certificate and the host was not left disabled. Disable a host to refuse it.
+Deleting a host deletes its stored logs. The agent will register that hostname again if it still has the key and the host was not left disabled. Disable a host to refuse it.
 
 ## HTTP API
 
-`POST /api/v1/register` is signed with the agent private key. The signature is the `X-Dlog-Signature` header, base64url of the ECDSA signature over the SHA-256 of the raw JSON body. The body is `{"hostname","agent_version","timestamp"}`. Ingest and heartbeat then send `Authorization: Bearer <host token>`, the token the agent saved at registration. Operator routes use the `dlog_session` cookie from `POST /api/v1/login`. A user account can read. An admin account can also change hosts, groups, accounts, and settings.
+`POST /api/v1/register` is signed with the shared key. `X-Dlog-PSK-Id` is the id. `X-Dlog-Signature` is unpadded base64url of HMAC-SHA256 over the raw JSON body. The body is `{"hostname","agent_version","timestamp"}`. Ingest and heartbeat then send `Authorization: Bearer <host token>`, the token the agent saved at registration. Operator routes use the `dlog_session` cookie from `POST /api/v1/login`. A user account can read. An admin account can also change hosts, groups, accounts, and settings.
 
 | Method | Path | Who |
 | --- | --- | --- |
 | GET | `/api/v1/health` | public |
 | GET | `/api/v1/brand` | public. Body is `{"name","tagline"}`. `name` is `Dlog` when the setting is blank. |
-| POST | `/api/v1/register` | agent certificate |
+| POST | `/api/v1/register` | shared key |
 | POST | `/api/v1/ingest` | host token |
 | POST | `/api/v1/heartbeat` | host token |
 | POST | `/api/v1/login` | username and password, sets the session cookie. A local account is checked first. An unknown name, or an account whose source is `directory`, is checked against the directory when that is turned on. The first success creates the account. A wrong password is 401. A directory that cannot be reached is 503 `directory unavailable`. An HTML form then redirects to `/login?error=directory`. |
@@ -158,9 +158,8 @@ Deleting a host deletes its stored logs. The agent will register that hostname a
 | POST | `/api/v1/admin/directory/test` | admin. The same directory fields as the settings PATCH. Nothing is saved. A blank bind password uses the saved one. The URL and base DN are required even when the directory is off. `200` with `{"ok":true}` means the server dialed, bound when a bind DN is set, and read the base DN. An admin group DN is read the same way. `400` is `bind failed`, `base DN was not found`, `admin group was not found`, or a settings validation error. `503` is `could not connect` or `directory unavailable`. |
 | POST | `/api/v1/admin/pending/{hostname}/approve` | admin. Creates the host in the default group. The agent gets a token on its next registration. |
 | DELETE | `/api/v1/admin/pending/{hostname}` | admin. Drops a waiting registration. |
-| GET | `/api/v1/admin/certificate` | admin. Fingerprint, subject, validity, and the file paths. The private key is not included. |
-| GET | `/api/v1/admin/certificate.pem` | admin. Downloads the public certificate. |
-| POST | `/api/v1/admin/certificate` | admin. `{"action":"generate"}` writes a new pair and returns the private key once. `{"action":"replace","cert_pem","key_pem"}` installs an ECDSA P-256 pair. |
+| GET | `/api/v1/admin/psk` | admin. Id, key fingerprint, and the data-directory files the server wrote (`psk.id`, `psk.key`). The key is not included. |
+| POST | `/api/v1/admin/psk` | admin. `{"action":"generate"}` writes a new id and key and returns the key once. `{"action":"replace","psk_id","psk_key"}` installs an id and a 32-byte key. The key is unpadded base64url. |
 
 A group name is 1–64 characters, starts with a letter or digit, and then uses letters, digits, spaces, `.`, `_`, or `-`. Names are unique ignoring case.
 
@@ -172,18 +171,18 @@ A new hostname returns 201. Registering an enabled hostname again returns 200 an
 
 Each setting is an environment variable. The matching flag overrides it. Durations take a Go duration or a day suffix, such as `7d`, `168h`, `10m`, or `15s`. `0` means zero. A boolean accepts `1`, `true`, `yes`, or `on`, and `0`, `false`, `no`, or `off`. An empty value keeps the default.
 
-The server image sets `DLOG_DATA_DIR=/var/lib/dlog` and `DLOG_ADDR=:8080`. The agent image sets `DLOG_STATE_DIR=/var/lib/dlog-agent`, `DLOG_DOCKER_HOST=/var/run/docker.sock`, `DLOG_AGENT_CERT=/etc/dlog/agent.crt`, and `DLOG_AGENT_KEY=/etc/dlog/agent.key`. The compose files set those again so the path the process reads is the path of the volume. The other compose values are the defaults below, so leaving the host variable unset does not change behavior.
+The server image sets `DLOG_DATA_DIR=/var/lib/dlog` and `DLOG_ADDR=:8080`. The agent image sets `DLOG_STATE_DIR=/var/lib/dlog-agent` and `DLOG_DOCKER_HOST=/var/run/docker.sock`. The compose files set those again so the path the process uses is the path of the volume. The other compose values are the defaults below, so leaving the host variable unset does not change behavior. Pass `DLOG_PSK_ID` and `DLOG_PSK_KEY` in when you start the agent.
 
 ### Server
 
 | Variable | Flag | Default | What it does |
 | --- | --- | --- | --- |
 | `DLOG_ADDR` | `-addr` | `:8080` | Address the server listens on. The image and `deploy/server-compose.yaml` keep `:8080` because that is the container port the file publishes. Change it only together with that port mapping. |
-| `DLOG_DATA_DIR` | `-data-dir` | `data/server` | Directory for the database, the generated admin password, and the generated agent certificate. The image and the server compose file use `/var/lib/dlog` because that directory is the persistent volume. |
+| `DLOG_DATA_DIR` | `-data-dir` | `data/server` | Directory for the database, the generated admin password, and the generated agent key. The image and the server compose file use `/var/lib/dlog` because that directory is the persistent volume. |
 | `DLOG_ADMIN_USER` | `-admin-user` | `admin` | Username of the first account. It is read only when the database has no accounts. A later start does not rename the account. |
 | `DLOG_ADMIN_PASSWORD` | `-admin-password` | empty | Password of that first account. Empty makes the server generate one, print it once, and store it in `admin.password` inside the data directory. The server compose file leaves it empty so the first start still does that. Set it when the first password should be one you chose. |
-| `DLOG_AGENT_CERT` | `-agent-cert` | empty | Shared agent certificate. Empty generates `agent.crt` in the data directory. Set a path to use a certificate you already have. The server compose file leaves it empty so the generated pair stays in the data volume, where you can copy it to each agent. |
-| `DLOG_AGENT_KEY` | `-agent-key` | empty | Where the private key is written when the certificate is generated. Empty writes `agent.key` next to the certificate. Set it with `DLOG_AGENT_CERT` when both files already exist. |
+| `DLOG_PSK_ID` | `-psk-id` | empty | Shared agent PSK id. Empty, together with an empty `DLOG_PSK_KEY`, keeps or generates `psk.id` in the data directory. Set both to use an id and key you already have. A set pair is written into the data directory on every start, so a key changed in Settings is replaced on the next restart. The server compose file leaves both empty so the generated key stays in the data volume. The id is logged. The key is not. |
+| `DLOG_PSK_KEY` | `-psk-key` | empty | Shared agent PSK key, 32 bytes as unpadded base64url. Set it together with `DLOG_PSK_ID`. One of the two set, and the other empty, stops the server. The key is not logged. |
 | `DLOG_RETENTION` | `-retention` | `168h` | How long logs are kept. This seeds Settings only when retention has never been saved. `0` keeps logs. After that, the console value wins, so changing this variable on a later start does nothing until you change retention in Settings. |
 | `DLOG_TLS_CERT` | `-tls-cert` | empty | PEM certificate for HTTPS. Empty serves plain HTTP. Set it together with `DLOG_TLS_KEY`. The health check then uses `https`. |
 | `DLOG_TLS_KEY` | `-tls-key` | empty | Private key for that certificate. The server refuses to start when only one of the two is set. |
@@ -196,14 +195,13 @@ The server image sets `DLOG_DATA_DIR=/var/lib/dlog` and `DLOG_ADDR=:8080`. The a
 
 | Variable | Flag | Default | What it does |
 | --- | --- | --- | --- |
-| `DLOG_SERVER_URL` | `-server` | required | Base URL of the server. The agent only dials out. The agent compose file requires it so the container cannot start without a server to call. |
-| `DLOG_AGENT_CERT` | `-agent-cert` | required | Path of the shared agent certificate. Every agent carries the same file, and the server accepts registration because it trusts this certificate. The image and the agent compose file use `/etc/dlog/agent.crt` because that is where the certificate is mounted. |
-| `DLOG_AGENT_KEY` | `-agent-key` | required | Path of the private key for that certificate. The agent signs its registration with it. The compose file uses `/etc/dlog/agent.key` to match the key mount. |
+| `DLOG_SERVER_URL` | `-server` | required | Base URL of the server. The agent only dials out. The agent compose file requires it so the container cannot start without a server to call. `https` uses the system trust store. A self-signed certificate is also accepted when its name matches this URL and it is within its dates. The name must be a DNS SAN, or an IP SAN when the URL host is an IP. |
+| `DLOG_PSK_ID` | `-psk-id` | required | Shared PSK id. The same value on every agent. The agent compose file requires it. |
+| `DLOG_PSK_KEY` | `-psk-key` | required | Shared PSK key, 32 bytes as unpadded base64url. The agent signs its registration with it. The agent compose file requires it. |
 | `DLOG_HOSTNAME` | `-hostname` | the machine hostname | Name recorded for this host. It must stay stable and match `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`. The compose file requires it because a new container gets a new hostname and would show up as a different host. |
 | `DLOG_HOSTNAME_FILE` | `-hostname-file` | empty | File to read the hostname from, used only when `DLOG_HOSTNAME` is empty. Set it when the name should come from a mounted file, such as the host's `/etc/hostname`. |
 | `DLOG_STATE_DIR` | `-state-dir` | `data/agent` | Directory for the host token and the log cursors. The image and the compose file use `/var/lib/dlog-agent` because that is the state volume. Losing it makes the agent register again and re-read Docker from `DLOG_SINCE`. |
 | `DLOG_DOCKER_HOST` | `-docker-host` | `/var/run/docker.sock` | Docker API socket, or a `unix://` URL. This is the daemon whose containers are shipped. The compose file keeps the default and mounts the host socket on that path, so the agent sees the host's containers rather than an empty daemon of its own. For Podman, mount that socket on the same path, or set this to the socket path inside the container. |
-| `DLOG_CA_FILE` | `-ca-file` | empty | PEM bundle used to verify the server certificate. Empty uses the system trust store, which is enough for a public certificate. Set it, and mount the file there, when a private CA signed the server certificate. |
 | `DLOG_SINCE` | `-since` | `10m` | How far back to read a container the first time. Later reads continue from the saved cursor. It keeps a new agent from importing the daemon's whole history. An invalid value stops the agent. |
 | `DLOG_BATCH` | `-batch` | `200` | Lines sent in one request. The server accepts at most 1000, and the agent will not send more than 500. A value that is not a positive number stays 200. |
 | `DLOG_FLUSH` | `-flush` | `1s` | Longest a line waits before a short batch is sent. A smaller value shows lines sooner. A larger value groups more lines into one request. An invalid value stops the agent. |
@@ -219,8 +217,6 @@ Compose reads these names. The server and the agent do not.
 
 | Variable | What it does |
 | --- | --- |
-| `DLOG_AGENT_CERT_FILE` | Host path of `agent.crt`. `deploy/agent-compose.yaml` mounts it at `/etc/dlog/agent.crt` and requires it, because the agent cannot register without that certificate. |
-| `DLOG_AGENT_KEY_FILE` | Host path of `agent.key`, mounted at `/etc/dlog/agent.key`. Required for the same reason. |
 | `DLOG_PUBLISH_PORT` | Host port forwarded to container port 8080 in `deploy/server-compose.yaml`. The default is `8080`. It does not change `DLOG_ADDR`. |
 
 ## Storage
@@ -236,7 +232,7 @@ cmd/server          dlog-server
 cmd/agent           dlog-agent
 internal/server     store, API, operator console
 internal/agent      Docker log follower and shipper
-internal/agentcred  shared agent certificate
+internal/agentcred  shared agent pre-shared key
 internal/protocol   JSON contract
 deploy/             images and compose files for the server and the agent
 .github/workflows   publish images to ghcr.io

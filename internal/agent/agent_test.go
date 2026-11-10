@@ -84,7 +84,7 @@ func TestAgentShipsLogs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	api := httptest.NewServer(server.New(st, key.Certificate(), false, false).Handler())
+	api := httptest.NewServer(server.New(st, key, false, false).Handler())
 	t.Cleanup(api.Close)
 
 	const id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -99,7 +99,7 @@ func TestAgentShipsLogs(t *testing.T) {
 			ServerURL:         api.URL,
 			Hostname:          "agent-test",
 			StateDir:          t.TempDir(),
-			AgentCert:         key.Pair(),
+			PSK:               *key,
 			Since:             time.Hour,
 			BatchSize:         1,
 			FlushInterval:     20 * time.Millisecond,

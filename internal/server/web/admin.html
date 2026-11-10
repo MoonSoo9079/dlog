@@ -32,7 +32,7 @@
       <span class="admin-nav-label hidden px-4 pb-1 pt-5 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500 md:block">Settings</span>
       <button type="button" id="nav-general" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">General</button>
       <button type="button" id="nav-registration" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Registration</button>
-      <button type="button" id="nav-certificate" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Certificate</button>
+      <button type="button" id="nav-psk" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Shared key</button>
       <button type="button" id="nav-groups" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Groups</button>
       <button type="button" id="nav-accounts" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Accounts</button>
       <button type="button" id="nav-directory" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Directory</button>
@@ -41,7 +41,7 @@
       <div class="mx-auto max-w-5xl px-4 py-8 md:px-8">
         <section id="panel-hosts">
           <h1 class="text-lg font-semibold tracking-tight text-slate-100">Hosts</h1>
-          <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">Agents that hold this server's certificate register themselves. The hostname is how an agent is recognized and stays put. A display name is what the log list shows. Put a host in one group, or disable a host to stop it.</p>
+          <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">Agents that hold this server's key register themselves. The hostname is how an agent is recognized and stays put. A display name is what the log list shows. Put a host in one group, or disable a host to stop it.</p>
           <label class="sr-only" for="host-admin-q">Search hosts</label>
           <input id="host-admin-q" class="mt-5 h-8 w-full max-w-sm cursor-text rounded-md border border-ink-edge bg-ink-field px-2.5 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" type="search" placeholder="Search hosts" autocomplete="off" spellcheck="false">
           <div id="admin-hosts" class="mt-4 border-t border-ink-line"></div>
@@ -98,7 +98,7 @@
         </section>
         <section id="panel-registration" hidden>
           <h1 class="text-lg font-semibold tracking-tight text-slate-100">Registration</h1>
-          <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">Automatic registration creates a host when an agent signs in with this server's certificate. Turn it off and new hostnames wait for approval. An agent that already registered keeps its token and can register again. A new host joins the default group, or stays ungrouped.</p>
+          <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">Automatic registration creates a host when an agent signs in with this server's key. Turn it off and new hostnames wait for approval. An agent that already registered keeps its token and can register again. A new host joins the default group, or stays ungrouped.</p>
           <form id="save-registration" class="mt-6 max-w-md">
             <label class="inline-flex cursor-pointer items-center gap-2 text-[13px] text-slate-200" for="auto-register">
               <input id="auto-register" class="h-3.5 w-3.5 cursor-pointer" type="checkbox" checked>
@@ -116,31 +116,32 @@
           <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">These agents signed a registration while automatic registration was off. Approve creates the host. The agent receives a token the next time it registers. Dismiss drops the request.</p>
           <div id="pending-hosts" class="mt-4 border-t border-ink-line"></div>
         </section>
-        <section id="panel-certificate" hidden>
-          <h1 class="text-lg font-semibold tracking-tight text-slate-100">Certificate</h1>
-          <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">Every agent uses this certificate to register. Replacing it stops registration until each agent has the new certificate and key. Hosts that already have a token keep sending logs.</p>
-          <p id="cert-fingerprint" class="mt-5 break-all font-mono text-[12px] text-slate-300"></p>
-          <p id="cert-expiry" class="mt-1 text-[12px] text-slate-500"></p>
-          <p id="cert-paths" class="mt-1 break-all text-[12px] text-slate-500"></p>
+        <section id="panel-psk" hidden>
+          <h1 class="text-lg font-semibold tracking-tight text-slate-100">Shared key</h1>
+          <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">Every agent uses this id and key to register. Replacing them stops registration until each agent has the new id and key. Hosts that already have a token keep sending logs.</p>
+          <p class="mt-5 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">Id</p>
+          <p id="psk-id" class="mt-1 break-all font-mono text-[13px] text-slate-100"></p>
+          <p class="mt-4 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">Key fingerprint</p>
+          <p id="psk-fingerprint" class="mt-1 break-all font-mono text-[12px] text-slate-300"></p>
+          <p id="psk-paths" class="mt-1 break-all text-[12px] text-slate-500"></p>
           <div class="mt-4 flex flex-wrap gap-2">
-            <a class="inline-flex h-8 cursor-pointer items-center rounded-md border border-ink-edge bg-ink-field px-3 text-[12px] font-medium text-slate-300 transition-colors duration-150 ease-in-out hover:border-slate-500 hover:text-slate-100" href="/api/v1/admin/certificate.pem">Download certificate</a>
-            <button type="button" id="generate-cert" class="inline-flex h-8 cursor-pointer items-center rounded-md border border-status-down bg-transparent px-3 text-[12px] font-medium text-clay transition-colors duration-150 ease-in-out hover:bg-status-down/10 disabled:cursor-default disabled:opacity-40">Generate a new certificate</button>
+            <button type="button" id="generate-psk" class="inline-flex h-8 cursor-pointer items-center rounded-md border border-status-down bg-transparent px-3 text-[12px] font-medium text-clay transition-colors duration-150 ease-in-out hover:bg-status-down/10 disabled:cursor-default disabled:opacity-40">Generate a new key</button>
           </div>
-          <div id="cert-once" class="mt-4" hidden></div>
-          <form id="replace-cert" class="mt-8 max-w-3xl border-t border-ink-line pt-6">
-            <h2 class="text-[13px] font-semibold text-slate-100">Replace with your own pair</h2>
-            <p class="mt-2 text-[13px] leading-relaxed text-slate-400">Use an ECDSA P-256 certificate and its private key. Both files are PEM text.</p>
+          <div id="psk-once" class="mt-4" hidden></div>
+          <form id="replace-psk" class="mt-8 max-w-3xl border-t border-ink-line pt-6">
+            <h2 class="text-[13px] font-semibold text-slate-100">Replace with your own key</h2>
+            <p class="mt-2 text-[13px] leading-relaxed text-slate-400">The id is a short name. The key is 32 bytes written as unpadded base64url. Set the same values as <span class="font-mono">DLOG_PSK_ID</span> and <span class="font-mono">DLOG_PSK_KEY</span> on every agent.</p>
             <div class="mt-4 grid gap-4 md:grid-cols-2">
               <div>
-                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="cert-file">Certificate</label>
-                <input id="cert-file" class="block w-full cursor-pointer rounded-md border border-ink-edge bg-ink-field px-2 py-1.5 text-[13px] text-slate-300 transition-colors duration-150 ease-in-out file:mr-3 file:cursor-pointer file:rounded-md file:border file:border-ink-edge file:bg-ink-bg file:px-2.5 file:py-1 file:text-[12px] file:font-medium file:text-slate-200 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" type="file" accept=".pem,.crt,.cer,text/plain">
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="psk-replace-id">Id</label>
+                <input id="psk-replace-id" class="h-8 w-full rounded-md border border-ink-edge bg-ink-field px-2.5 font-mono text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" maxlength="64" autocomplete="off" spellcheck="false">
               </div>
               <div>
-                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="key-file">Private key</label>
-                <input id="key-file" class="block w-full cursor-pointer rounded-md border border-ink-edge bg-ink-field px-2 py-1.5 text-[13px] text-slate-300 transition-colors duration-150 ease-in-out file:mr-3 file:cursor-pointer file:rounded-md file:border file:border-ink-edge file:bg-ink-bg file:px-2.5 file:py-1 file:text-[12px] file:font-medium file:text-slate-200 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" type="file" accept=".pem,.key,text/plain">
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="psk-replace-key">Key</label>
+                <input id="psk-replace-key" class="h-8 w-full rounded-md border border-ink-edge bg-ink-field px-2.5 font-mono text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" autocomplete="off" spellcheck="false">
               </div>
             </div>
-            <button type="submit" class="mt-4 inline-flex h-8 cursor-pointer items-center rounded-md border border-amber-500/50 bg-transparent px-3 text-[12px] font-medium text-amber-300 transition-colors duration-150 ease-in-out hover:bg-amber-500/10">Replace certificate</button>
+            <button type="submit" class="mt-4 inline-flex h-8 cursor-pointer items-center rounded-md border border-amber-500/50 bg-transparent px-3 text-[12px] font-medium text-amber-300 transition-colors duration-150 ease-in-out hover:bg-amber-500/10">Replace key</button>
           </form>
         </section>
         <section id="panel-groups" hidden>

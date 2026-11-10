@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/http"
@@ -18,7 +17,6 @@ type Config struct {
 	Hostname          string
 	StateDir          string
 	DockerHost        string
-	CAFile            string
 	Since             time.Duration
 	BatchSize         int
 	FlushInterval     time.Duration
@@ -27,8 +25,8 @@ type Config struct {
 	IncludeSelf       bool
 	Exclude           map[string]struct{}
 
-	// AgentCert is the shared registration certificate and its private key.
-	AgentCert tls.Certificate
+	// PSK is the shared registration id and key.
+	PSK agentcred.Key
 
 	// Engine and HTTP override the Docker socket and HTTP client. Tests set them.
 	Engine Engine
@@ -76,8 +74,8 @@ func (c Config) validate() error {
 	if c.StateDir == "" {
 		return errors.New("state dir is required")
 	}
-	if _, err := agentcred.Sign(c.AgentCert, []byte("ok")); err != nil {
-		return errors.New("agent certificate and key are required")
+	if _, err := agentcred.Sign(&c.PSK, []byte("ok")); err != nil {
+		return errors.New("psk id and key are required")
 	}
 	return nil
 }

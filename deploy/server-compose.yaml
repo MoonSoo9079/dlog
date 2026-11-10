@@ -2,10 +2,12 @@
 # From the repo root:
 #   docker compose -f deploy/server-compose.yaml up -d --build
 # Leave DLOG_ADMIN_PASSWORD empty to generate the first admin password into the
-# data volume on first start (admin.password). Leave DLOG_AGENT_CERT and
-# DLOG_AGENT_KEY empty to generate the shared agent pair in that same volume.
-# To install your own agent pair or a TLS certificate, mount the files and set
-# those variables to the paths inside the container.
+# data volume on first start (admin.password). Leave DLOG_PSK_ID and
+# DLOG_PSK_KEY empty to generate the shared agent key in that same volume
+# (psk.id and psk.key). Set both to the id and the key when you already have
+# them. A set pair is written into the volume on every start.
+# To install a TLS certificate, mount the files and set DLOG_TLS_CERT and
+# DLOG_TLS_KEY to the paths inside the container.
 # DLOG_PUBLISH_PORT is the host port forwarded to container port 8080. It is not
 # read by the server. Leave DLOG_ADDR at :8080 unless you change that mapping.
 # Every DLOG_* variable the server reads is listed below. DLOG_DATA_DIR matches
@@ -25,8 +27,8 @@ services:
       DLOG_DATA_DIR: /var/lib/dlog
       DLOG_ADMIN_USER: ${DLOG_ADMIN_USER:-admin}
       DLOG_ADMIN_PASSWORD: ${DLOG_ADMIN_PASSWORD:-}
-      DLOG_AGENT_CERT: ${DLOG_AGENT_CERT:-}
-      DLOG_AGENT_KEY: ${DLOG_AGENT_KEY:-}
+      DLOG_PSK_ID: ${DLOG_PSK_ID:-}
+      DLOG_PSK_KEY: ${DLOG_PSK_KEY:-}
       DLOG_RETENTION: ${DLOG_RETENTION:-168h}
       DLOG_TLS_CERT: ${DLOG_TLS_CERT:-}
       DLOG_TLS_KEY: ${DLOG_TLS_KEY:-}

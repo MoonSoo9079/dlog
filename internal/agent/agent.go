@@ -15,7 +15,7 @@ var (
 	errDrop     = errors.New("drop batch")
 )
 
-// Run registers with the shared agent certificate if needed, tails every running container, and pushes batches until ctx is cancelled.
+// Run registers with the shared pre-shared key if needed, tails every running container, and pushes batches until ctx is cancelled.
 // Delivery is at-least-once: a crash after the server accepts a batch and before the cursor is saved
 // can send those lines again.
 func Run(ctx context.Context, cfg Config) error {
@@ -29,7 +29,7 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	httpClient := cfg.HTTP
 	if httpClient == nil {
-		httpClient, err = newHTTPClient(cfg.CAFile)
+		httpClient, err = newHTTPClient(cfg.ServerURL)
 		if err != nil {
 			return err
 		}

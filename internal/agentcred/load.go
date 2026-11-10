@@ -1,100 +1,87 @@
 package agentcred
 
 import (
-	"crypto/ecdsa"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/pem"
+	"encoding/base64"
 	"errors"
 	"os"
+	"strings"
+	"unicode"
 )
 
-// Ensure loads the certificate at certPath, or generates a new keypair when
-// that file does not exist yet. The private key is written only on generation.
-func Ensure(certPath, keyPath string) (cert *x509.Certificate, generated bool, err error) {
-	if _, err := os.Stat(certPath); err == nil {
-		c, err := LoadCert(certPath)
-		return c, false, err
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, false, err
+// Ensure loads the key at idPath, or generates a new one when neither file
+// exists yet. The key file is written only on generation.
+func Ensure(idPath, keyPath string) (key *Key, generated bool, err error) {
+	_, idErr := os.Stat(idPath)
+	_, keyErr := os.Stat(keyPath)
+	switch {
+	case idErr == nil && keyErr == nil:
+		k, err := Load(idPath, keyPath)
+		return k, false, err
+	case idErr != nil && !errors.Is(idErr, os.ErrNotExist):
+		return nil, false, idErr
+	case keyErr != nil && !errors.Is(keyErr, os.ErrNotExist):
+		return nil, false, keyErr
+	case errors.Is(idErr, os.ErrNotExist) && errors.Is(keyErr, os.ErrNotExist):
+		k, err := Generate()
+		if err != nil {
+			return nil, false, err
+		}
+		if err := k.Write(idPath, keyPath); err != nil {
+			return nil, false, err
+		}
+		return k, true, nil
+	default:
+		return nil, false, errors.New("psk id and key must both exist or both be missing")
 	}
-	k, err := Generate()
-	if err != nil {
-		return nil, false, err
-	}
-	if err := k.Write(certPath, keyPath); err != nil {
-		return nil, false, err
-	}
-	return k.cert, true, nil
 }
 
-// LoadCert reads a PEM certificate and requires ECDSA P-256.
-func LoadCert(path string) (*x509.Certificate, error) {
-	b, err := os.ReadFile(path)
+// Load reads the id and key files an agent signs with.
+func Load(idPath, keyPath string) (*Key, error) {
+	id, err := os.ReadFile(idPath)
 	if err != nil {
 		return nil, err
 	}
-	block, _ := pem.Decode(b)
-	if block == nil || block.Type != "CERTIFICATE" {
-		return nil, errors.New("agent certificate file does not contain a PEM certificate")
-	}
-	cert, err := x509.ParseCertificate(block.Bytes)
+	secret, err := os.ReadFile(keyPath)
 	if err != nil {
 		return nil, err
 	}
-	if err := checkCert(cert); err != nil {
-		return nil, err
-	}
-	return cert, nil
+	return Parse(string(id), string(secret))
 }
 
-// LoadPair reads the certificate and private key an agent signs with.
-func LoadPair(certPath, keyPath string) (tls.Certificate, error) {
-	pair, err := tls.LoadX509KeyPair(certPath, keyPath)
-	if err != nil {
-		return tls.Certificate{}, err
+// Parse reads an id and a 32-byte key encoded as unpadded base64url.
+func Parse(id, key string) (*Key, error) {
+	id = strings.TrimSpace(id)
+	key = strings.TrimSpace(key)
+	if !validID(id) {
+		return nil, errors.New("psk id must be 1-64 characters of letters, digits, '.', '_', or '-'")
 	}
-	if len(pair.Certificate) == 0 {
-		return tls.Certificate{}, errors.New("agent certificate is empty")
+	if len(key) == 0 || len(key) > 128 {
+		return nil, errors.New("psk key must be 32 bytes, base64url")
 	}
-	leaf, err := x509.ParseCertificate(pair.Certificate[0])
-	if err != nil {
-		return tls.Certificate{}, err
+	raw, err := base64.RawURLEncoding.DecodeString(key)
+	if err != nil || len(raw) != keySize {
+		return nil, errors.New("psk key must be 32 bytes, base64url")
 	}
-	if err := checkCert(leaf); err != nil {
-		return tls.Certificate{}, err
-	}
-	if _, ok := pair.PrivateKey.(*ecdsa.PrivateKey); !ok {
-		return tls.Certificate{}, errors.New("agent key must be ECDSA P-256")
-	}
-	pair.Leaf = leaf
-	return pair, nil
+	secret := make([]byte, keySize)
+	copy(secret, raw)
+	return &Key{id: id, secret: secret}, nil
 }
 
-// ParsePair reads a PEM certificate and the matching ECDSA P-256 private key.
-func ParsePair(certPEM, keyPEM []byte) (*Key, error) {
-	if len(certPEM) == 0 || len(certPEM) > 1<<16 || len(keyPEM) == 0 || len(keyPEM) > 1<<16 {
-		return nil, errors.New("invalid certificate")
+func validID(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
 	}
-	pair, err := tls.X509KeyPair(certPEM, keyPEM)
-	if err != nil {
-		return nil, err
+	for i, r := range id {
+		switch {
+		case r > unicode.MaxASCII:
+			return false
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case i > 0 && (r == '.' || r == '_' || r == '-'):
+		default:
+			return false
+		}
 	}
-	if len(pair.Certificate) == 0 {
-		return nil, errors.New("agent certificate is empty")
-	}
-	leaf, err := x509.ParseCertificate(pair.Certificate[0])
-	if err != nil {
-		return nil, err
-	}
-	if err := checkCert(leaf); err != nil {
-		return nil, err
-	}
-	priv, ok := pair.PrivateKey.(*ecdsa.PrivateKey)
-	if !ok {
-		return nil, errors.New("agent key must be ECDSA P-256")
-	}
-	return &Key{cert: leaf, priv: priv}, nil
+	return true
 }
 
 func writeNew(path string, data []byte, mode os.FileMode) error {

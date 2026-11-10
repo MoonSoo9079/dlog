@@ -1,5 +1,6 @@
 # Lab stack. The agent reads every container on the host's Docker daemon,
-# not only the services in this file.
+# not only the services in this file. The server and the agent share one
+# fixed id and key, the same way the admin password below is fixed for the lab.
 #   docker compose up --build
 # Then open http://127.0.0.1:8080 and sign in as admin / local-dev-admin-password.
 services:
@@ -16,11 +17,10 @@ services:
       DLOG_ADMIN_PASSWORD: local-dev-admin-password
       DLOG_RETENTION: 168h
       DLOG_DATA_DIR: /var/lib/dlog
-      DLOG_AGENT_CERT: /var/lib/dlog-cred/agent.crt
-      DLOG_AGENT_KEY: /var/lib/dlog-cred/agent.key
+      DLOG_PSK_ID: lab
+      DLOG_PSK_KEY: OuE55bD_gmwIJwoFSVUIpJZFSIJ9J2TQNE-ftWrZ48c
     volumes:
       - dlog-data:/var/lib/dlog
-      - dlog-cred:/var/lib/dlog-cred
     healthcheck:
       test: ["CMD", "/usr/local/bin/dlog-server", "healthcheck"]
       interval: 5s
@@ -44,14 +44,13 @@ services:
       DLOG_HOSTNAME: dlog-lab
       DLOG_SINCE: 10m
       DLOG_STATE_DIR: /var/lib/dlog-agent
-      DLOG_AGENT_CERT: /etc/dlog/agent.crt
-      DLOG_AGENT_KEY: /etc/dlog/agent.key
+      DLOG_PSK_ID: lab
+      DLOG_PSK_KEY: OuE55bD_gmwIJwoFSVUIpJZFSIJ9J2TQNE-ftWrZ48c
     labels:
       dlog.exclude: "true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - dlog-agent:/var/lib/dlog-agent
-      - dlog-cred:/etc/dlog:ro
     restart: unless-stopped
 
   logger:
@@ -61,5 +60,4 @@ services:
 
 volumes:
   dlog-data:
-  dlog-cred:
   dlog-agent:

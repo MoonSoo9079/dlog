@@ -1,47 +1,38 @@
 package agentcred
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
+	"crypto/hmac"
 	"crypto/sha256"
-	"crypto/tls"
-	"crypto/x509"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"time"
 )
 
-// Sign signs body with the agent private key. The result is the header value.
-func Sign(pair tls.Certificate, body []byte) (string, error) {
-	priv, ok := pair.PrivateKey.(*ecdsa.PrivateKey)
-	if !ok {
-		return "", errors.New("agent key must be ECDSA P-256")
+// Sign returns the X-Dlog-Signature value for body.
+func Sign(k *Key, body []byte) (string, error) {
+	if k == nil || len(k.secret) != keySize {
+		return "", errors.New("psk key is required")
 	}
-	sum := sha256.Sum256(body)
-	sig, err := priv.Sign(rand.Reader, sum[:], nil)
-	if err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(sig), nil
+	mac := hmac.New(sha256.New, k.secret)
+	mac.Write(body)
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
 
-// Verify checks that sigHeader is an ECDSA signature of body by cert.
-func Verify(cert *x509.Certificate, body []byte, sigHeader string) error {
-	if cert == nil {
-		return errors.New("no agent certificate")
+// Verify checks that id is this key's id and sigHeader is the HMAC-SHA256 of body.
+func Verify(k *Key, id, sigHeader string, body []byte) error {
+	if k == nil || len(k.secret) != keySize {
+		return errors.New("no agent key")
 	}
-	if err := checkCert(cert); err != nil {
-		return err
+	mac := hmac.New(sha256.New, k.secret)
+	mac.Write(body)
+	expected := mac.Sum(nil)
+	got, err := base64.RawURLEncoding.DecodeString(sigHeader)
+	if err != nil {
+		got = nil
 	}
-	sig, err := base64.RawURLEncoding.DecodeString(sigHeader)
-	if err != nil || len(sig) == 0 {
-		return errors.New("invalid signature")
-	}
-	sum := sha256.Sum256(body)
-	pub := cert.PublicKey.(*ecdsa.PublicKey)
-	if !ecdsa.VerifyASN1(pub, sum[:], sig) {
+	if !hmac.Equal(got, expected) || subtle.ConstantTimeCompare([]byte(id), []byte(k.id)) != 1 {
 		return errors.New("invalid signature")
 	}
 	return nil
@@ -59,23 +50,11 @@ func Fresh(t, now time.Time) bool {
 	return d <= Window
 }
 
-// Fingerprint is the hex SHA-256 of the certificate.
-func Fingerprint(cert *x509.Certificate) string {
-	if cert == nil {
+// Fingerprint is the hex SHA-256 of the key. It identifies a key without revealing it.
+func Fingerprint(k *Key) string {
+	if k == nil || len(k.secret) == 0 {
 		return ""
 	}
-	sum := sha256.Sum256(cert.Raw)
+	sum := sha256.Sum256(k.secret)
 	return hex.EncodeToString(sum[:])
-}
-
-func checkCert(cert *x509.Certificate) error {
-	pub, ok := cert.PublicKey.(*ecdsa.PublicKey)
-	if !ok || pub.Curve != elliptic.P256() {
-		return errors.New("agent certificate must use ECDSA P-256")
-	}
-	now := time.Now()
-	if now.Before(cert.NotBefore) || now.After(cert.NotAfter) {
-		return errors.New("agent certificate is outside its validity period")
-	}
-	return nil
 }

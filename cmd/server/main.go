@@ -28,8 +28,8 @@ type config struct {
 	DataDir       string
 	AdminUser     string
 	AdminPassword string
-	AgentCert     string
-	AgentKey      string
+	PSKID         string
+	PSKKey        string
 	Retention     time.Duration
 	TLSCert       string
 	TLSKey        string
@@ -68,8 +68,8 @@ func parseConfig(args []string) (config, error) {
 	fs.StringVar(&cfg.DataDir, "data-dir", cli.Env("DLOG_DATA_DIR", "data/server"), "directory for the database and generated files")
 	fs.StringVar(&cfg.AdminUser, "admin-user", cli.Env("DLOG_ADMIN_USER", "admin"), "username of the first admin account, used only when the database has no accounts")
 	fs.StringVar(&cfg.AdminPassword, "admin-password", cli.Env("DLOG_ADMIN_PASSWORD", ""), "password of the first admin account; generated on first start when empty")
-	fs.StringVar(&cfg.AgentCert, "agent-cert", cli.Env("DLOG_AGENT_CERT", ""), "shared agent certificate; generated into the data directory when empty")
-	fs.StringVar(&cfg.AgentKey, "agent-key", cli.Env("DLOG_AGENT_KEY", ""), "where to write the agent private key when generating a certificate")
+	fs.StringVar(&cfg.PSKID, "psk-id", cli.Env("DLOG_PSK_ID", ""), "shared agent PSK id; generated and stored in the data directory when empty")
+	fs.StringVar(&cfg.PSKKey, "psk-key", cli.Env("DLOG_PSK_KEY", ""), "shared agent PSK key; generated and stored in the data directory when empty")
 	fs.Func("retention", "delete logs older than this duration (0 keeps them; 7d or 168h)", func(s string) error {
 		d, err := cli.Duration(s, cfg.Retention)
 		if err != nil {
@@ -89,6 +89,9 @@ func parseConfig(args []string) (config, error) {
 	if (cfg.TLSCert == "") != (cfg.TLSKey == "") {
 		return config{}, errors.New("tls-cert and tls-key must be set together")
 	}
+	if (cfg.PSKID == "") != (cfg.PSKKey == "") {
+		return config{}, errors.New("psk-id and psk-key must be set together")
+	}
 	return cfg, nil
 }
 
@@ -96,22 +99,31 @@ func run(cfg config) error {
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return err
 	}
-	certPath := cfg.AgentCert
-	keyPath := cfg.AgentKey
-	if certPath == "" {
-		certPath = filepath.Join(cfg.DataDir, "agent.crt")
-	}
-	if keyPath == "" {
-		keyPath = filepath.Join(cfg.DataDir, "agent.key")
-	}
-	agentCert, generatedCert, err := agentcred.Ensure(certPath, keyPath)
-	if err != nil {
-		return err
-	}
-	if generatedCert {
-		slog.Warn("generated agent certificate; copy both files to every agent", "cert", certPath, "key", keyPath, "sha256", agentcred.Fingerprint(agentCert))
+	idPath := filepath.Join(cfg.DataDir, "psk.id")
+	keyPath := filepath.Join(cfg.DataDir, "psk.key")
+	var psk *agentcred.Key
+	if cfg.PSKID != "" {
+		var err error
+		psk, err = agentcred.Parse(cfg.PSKID, cfg.PSKKey)
+		if err != nil {
+			return err
+		}
+		if err := psk.Write(idPath, keyPath); err != nil {
+			return err
+		}
+		slog.Info("agent psk from environment", "id", psk.ID(), "sha256", agentcred.Fingerprint(psk))
 	} else {
-		slog.Info("agent certificate", "cert", certPath, "sha256", agentcred.Fingerprint(agentCert))
+		var generated bool
+		var err error
+		psk, generated, err = agentcred.Ensure(idPath, keyPath)
+		if err != nil {
+			return err
+		}
+		if generated {
+			slog.Warn("generated agent psk; copy the id and key to every agent", "id", psk.ID(), "id_file", idPath, "key_file", keyPath, "sha256", agentcred.Fingerprint(psk))
+		} else {
+			slog.Info("agent psk", "id", psk.ID(), "sha256", agentcred.Fingerprint(psk))
+		}
 	}
 	st, err := server.Open(filepath.Join(cfg.DataDir, "dlog.db"))
 	if err != nil {
@@ -129,8 +141,8 @@ func run(cfg config) error {
 	defer stop()
 	go purgeLoop(ctx, st)
 
-	api := server.New(st, agentCert, cfg.TrustProxy, cfg.SecureCookies)
-	api.SetCertFiles(certPath, keyPath)
+	api := server.New(st, psk, cfg.TrustProxy, cfg.SecureCookies)
+	api.SetPSKFiles(idPath, keyPath)
 	srv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           api.Handler(),
