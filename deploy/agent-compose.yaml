@@ -12,8 +12,8 @@
 # DLOG_STATE_DIR stays on the state volume.
 # DLOG_HOSTNAME_FILE is read only when DLOG_HOSTNAME is empty. This file still
 # requires DLOG_HOSTNAME, because a recreated container gets a new hostname.
-# A public server certificate uses the system trust store. A self-signed
-# certificate is accepted when its name matches DLOG_SERVER_URL.
+# With https, TLS encrypts the connection. The agent does not check the
+# server certificate. The shared key authenticates the agent.
 # For Podman, mount its API socket on /var/run/docker.sock, or set DLOG_DOCKER_HOST
 # to the socket path inside the container and mount that socket there.
 services:

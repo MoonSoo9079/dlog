@@ -20,9 +20,9 @@ On first registration the server gives the agent a host token. The agent stores 
 | Active checks | The agent pushes batches. Nothing on the host accepts connections |
 | Enable or disable a host | `enabled` or `disabled`. A disabled host is rejected with HTTP 403 |
 | Availability | Heartbeat every 15 seconds. The console marks a host online when it was seen within the offline window, 45 seconds unless Settings changes it |
-| Server certificate | A public certificate is checked with the system trust store. A self-signed certificate is accepted when its name matches the server URL |
+| Server certificate | HTTPS encrypts the connection. The agent does not check the certificate. The shared key authenticates the agent |
 
-The key on an agent can register any hostname and can take over an enabled hostname. Protect the shared key. Put TLS on the server (`-tls-cert` and `-tls-key`, or a reverse proxy) so a captured registration cannot be replayed after it expires. A registration timestamp is accepted for five minutes. A self-signed certificate does not prove the server's identity to a network attacker who can present another certificate for that name. Use a publicly trusted certificate when the path to the server is not trusted.
+The key on an agent can register any hostname and can take over an enabled hostname. Protect the shared key. Put TLS on the server (`-tls-cert` and `-tls-key`, or a reverse proxy) so a captured registration cannot be replayed after it expires. A registration timestamp is accepted for five minutes. The agent does not check the server certificate.
 
 The first time the server starts with `DLOG_PSK_ID` and `DLOG_PSK_KEY` empty, it writes `psk.id` and `psk.key` into the data directory and logs a warning with the id, those paths, and the key fingerprint. The key itself is not logged. Copy the two values onto every agent as `DLOG_PSK_ID` and `DLOG_PSK_KEY`. Settings can generate a new key or replace the one the server trusts, and that takes effect without a restart. Setting both variables installs that id and key on every start and overwrites the files in the data directory, including a key changed in Settings. The id is 1–64 characters, starting with a letter or digit. The key is 32 bytes, unpadded base64url. Hosts that already have a token keep sending logs.
 
@@ -80,7 +80,7 @@ That file publishes host port 8080 to container port 8080 and stores the databas
 
 `deploy/agent-compose.yaml` and `deploy/server-compose.yaml` set every `DLOG_` variable the agent and the server read. An unset variable uses the default written in the file. Paths that follow a volume stay on that mount: the agent state directory and the server data directory. Configuration says what each variable does and why it is set.
 
-The agent trusts a public server certificate through the system trust store. It also accepts a self-signed certificate when the name on the certificate matches the server URL and the certificate is current. No CA file is required. A certificate signed by a private CA is accepted only when that CA is already in the system trust store. Podman works too: mount its API socket on `/var/run/docker.sock`, or point `DLOG_DOCKER_HOST` at the socket path inside the container (`unix:///run/podman/podman.sock`, or `$XDG_RUNTIME_DIR/podman/podman.sock` for rootless) and mount that socket there.
+The agent uses HTTPS and does not check the server certificate. The shared key authenticates the agent. Podman works too: mount its API socket on `/var/run/docker.sock`, or point `DLOG_DOCKER_HOST` at the socket path inside the container (`unix:///run/podman/podman.sock`, or `$XDG_RUNTIME_DIR/podman/podman.sock` for rootless) and mount that socket there.
 
 ### Published images
 
@@ -195,7 +195,7 @@ The server image sets `DLOG_DATA_DIR=/var/lib/dlog` and `DLOG_ADDR=:8080`. The a
 
 | Variable | Flag | Default | What it does |
 | --- | --- | --- | --- |
-| `DLOG_SERVER_URL` | `-server` | required | Base URL of the server. The agent only dials out. The agent compose file requires it so the container cannot start without a server to call. `https` uses the system trust store. A self-signed certificate is also accepted when its name matches this URL and it is within its dates. The name must be a DNS SAN, or an IP SAN when the URL host is an IP. |
+| `DLOG_SERVER_URL` | `-server` | required | Base URL of the server. The agent only dials out. The agent compose file requires it so the container cannot start without a server to call. With `https`, TLS encrypts the connection and the agent does not check the server certificate. |
 | `DLOG_PSK_ID` | `-psk-id` | required | Shared PSK id. The same value on every agent. The agent compose file requires it. |
 | `DLOG_PSK_KEY` | `-psk-key` | required | Shared PSK key, 32 bytes as unpadded base64url. The agent signs its registration with it. The agent compose file requires it. |
 | `DLOG_HOSTNAME` | `-hostname` | the machine hostname | Name recorded for this host. It must stay stable and match `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`. The compose file requires it because a new container gets a new hostname and would show up as a different host. |
