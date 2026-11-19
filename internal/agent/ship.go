@@ -54,21 +54,27 @@ func (a *Agent) shipLoop(ctx context.Context) {
 }
 
 func (a *Agent) flushRemaining() {
-	recs := a.buf.peek(a.cfg.MaxBuffer)
-	if len(recs) == 0 {
-		return
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := a.sendBatch(ctx, recs); err != nil {
-		slog.Warn("final flush failed", "err", err, "records", len(recs))
-		return
+	batchSize := a.cfg.BatchSize
+	if batchSize <= 0 || batchSize > protocol.MaxBatch {
+		batchSize = 200
 	}
-	if err := a.state.Advance(recs); err != nil {
-		slog.Error("save cursor", "err", err)
-		return
+	for {
+		recs := a.buf.peek(batchSize)
+		if len(recs) == 0 {
+			return
+		}
+		if err := a.sendBatch(ctx, recs); err != nil {
+			slog.Warn("final flush failed", "err", err, "records", len(recs))
+			return
+		}
+		if err := a.state.Advance(recs); err != nil {
+			slog.Error("save cursor", "err", err)
+			return
+		}
+		a.buf.ack(len(recs))
 	}
-	a.buf.ack(len(recs))
 }
 
 func (a *Agent) noteSendErr(err error) {

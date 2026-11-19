@@ -67,6 +67,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/admin/hosts/{id}/disable", s.adminJSON(s.handleDisableHost))
 	mux.HandleFunc("POST /api/v1/admin/hosts/{id}/enable", s.adminJSON(s.handleEnableHost))
 	mux.HandleFunc("DELETE /api/v1/admin/hosts/{id}", s.adminJSON(s.handleDeleteHost))
+	mux.HandleFunc("DELETE /api/v1/admin/hosts/{id}/containers", s.adminJSON(s.handleDeleteExitedContainers))
+	mux.HandleFunc("DELETE /api/v1/admin/hosts/{id}/containers/{container_id}", s.adminJSON(s.handleDeleteContainer))
 	mux.HandleFunc("GET /api/v1/admin/settings", s.adminJSON(s.handleGetSettings))
 	mux.HandleFunc("PATCH /api/v1/admin/settings", s.adminJSON(s.handleUpdateSettings))
 	mux.HandleFunc("POST /api/v1/admin/directory/test", s.adminJSON(s.handleTestDirectory))
@@ -79,12 +81,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin", s.handleAdmin)
 	mux.HandleFunc("GET /account", s.handleAccount)
 	mux.HandleFunc("GET /login", s.handleLoginPage)
-	mux.HandleFunc("GET /app.css", s.handleCSS)
+	mux.HandleFunc("GET /boot.js", s.handleBootJS)
 	mux.HandleFunc("GET /app.js", s.handleJS)
 	mux.HandleFunc("GET /viewer.css", s.handleViewerCSS)
+	mux.HandleFunc("GET /favicon.svg", s.handleFavicon)
 	mux.HandleFunc("GET /fonts/{file}", s.handleFont)
-	mux.HandleFunc("GET /bootstrap.min.css", s.handleBootstrapCSS)
-	mux.HandleFunc("GET /bootstrap.bundle.min.js", s.handleBootstrapJS)
 	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -134,7 +135,7 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		// data: is for the SVG icons shipped inside Bootstrap's own stylesheet.
+		// data: is for the select chevron SVG data URIs in viewer.css.
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; font-src 'self'; frame-ancestors 'none'; base-uri 'none'")
 		next.ServeHTTP(w, r)
 	})

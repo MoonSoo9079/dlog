@@ -22,6 +22,7 @@ type Host struct {
 	CreatedAt      time.Time         `json:"created_at"`
 	LastSeenAt     *time.Time        `json:"last_seen_at,omitempty"`
 	ContainerCount int               `json:"container_count"`
+	ExitedCount    int               `json:"exited_count"`
 	GroupID        string            `json:"group_id"`
 	Metadata       map[string]string `json:"metadata,omitempty"`
 }
@@ -237,7 +238,8 @@ func (s *Store) ListHosts() ([]Host, error) {
 const hostSelect = `
 SELECT h.id, h.hostname, h.display_name, h.status, h.agent_version, h.docker_version, h.metadata, h.dropped,
        h.created_at, h.last_seen_at, COALESCE(h.group_id, ''),
-       (SELECT COUNT(*) FROM containers c WHERE c.host_id = h.id)
+       (SELECT COUNT(*) FROM containers c WHERE c.host_id = h.id),
+       (SELECT COUNT(*) FROM containers c WHERE c.host_id = h.id AND c.state <> 'running')
 FROM hosts h`
 
 type rowScanner interface {
@@ -249,7 +251,7 @@ func scanHost(row rowScanner) (Host, error) {
 	var meta string
 	var created int64
 	var seen sql.NullInt64
-	err := row.Scan(&h.ID, &h.Hostname, &h.DisplayName, &h.Status, &h.AgentVersion, &h.DockerVersion, &meta, &h.Dropped, &created, &seen, &h.GroupID, &h.ContainerCount)
+	err := row.Scan(&h.ID, &h.Hostname, &h.DisplayName, &h.Status, &h.AgentVersion, &h.DockerVersion, &meta, &h.Dropped, &created, &seen, &h.GroupID, &h.ContainerCount, &h.ExitedCount)
 	if err != nil {
 		return Host{}, err
 	}

@@ -108,6 +108,103 @@ ORDER BY CASE state WHEN 'running' THEN 0 ELSE 1 END, name`, hostID)
 	return out, rows.Err()
 }
 
+// DeleteContainer removes a container and its stored logs.
+// A running container on an online host is refused with ErrContainerRunning.
+func (s *Store) DeleteContainer(hostID, containerID string) error {
+	host, err := s.Host(hostID)
+	if err != nil {
+		return err
+	}
+	var state string
+	err = s.db.QueryRow(`SELECT state FROM containers WHERE host_id=? AND container_id=?`, hostID, containerID).Scan(&state)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if state == "running" && host.Online {
+		return ErrContainerRunning
+	}
+	for {
+		res, err := s.db.Exec(`DELETE FROM logs WHERE id IN (SELECT id FROM logs WHERE host_id=? AND container_id=? LIMIT 5000)`, hostID, containerID)
+		if err != nil {
+			return err
+		}
+		n, _ := res.RowsAffected()
+		if n == 0 {
+			break
+		}
+	}
+	var res sql.Result
+	if host.Online {
+		res, err = s.db.Exec(`DELETE FROM containers WHERE host_id=? AND container_id=? AND state<>'running'`, hostID, containerID)
+	} else {
+		res, err = s.db.Exec(`DELETE FROM containers WHERE host_id=? AND container_id=?`, hostID, containerID)
+	}
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		var cur string
+		err := s.db.QueryRow(`SELECT state FROM containers WHERE host_id=? AND container_id=?`, hostID, containerID).Scan(&cur)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if cur == "running" && host.Online {
+			return ErrContainerRunning
+		}
+	}
+	return nil
+}
+
+// DeleteExitedContainers removes every inactive container for a host and its stored logs.
+// When the host is online, running containers are kept.
+func (s *Store) DeleteExitedContainers(hostID string) (int64, error) {
+	host, err := s.Host(hostID)
+	if err != nil {
+		return 0, err
+	}
+	query := `SELECT container_id FROM containers WHERE host_id=? AND state<>'running'`
+	if !host.Online {
+		query = `SELECT container_id FROM containers WHERE host_id=?`
+	}
+	rows, err := s.db.Query(query, hostID)
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+
+	var deleted int64
+	for _, cid := range ids {
+		if err := s.DeleteContainer(hostID, cid); err != nil {
+			if errors.Is(err, ErrNotFound) || errors.Is(err, ErrContainerRunning) {
+				continue
+			}
+			return deleted, err
+		}
+		deleted++
+	}
+	return deleted, nil
+}
+
 func clipLabels(in map[string]string) map[string]string {
 	out := make(map[string]string, len(in))
 	n := 0

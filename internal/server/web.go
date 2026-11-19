@@ -6,7 +6,7 @@ import (
 	"regexp"
 )
 
-//go:embed web/index.html web/login.html web/admin.html web/account.html web/forbidden.html web/app.css web/app.js web/bootstrap.min.css web/bootstrap.bundle.min.js web/viewer.css web/fonts/*.woff2
+//go:embed web/index.html web/login.html web/admin.html web/account.html web/forbidden.html web/boot.js web/app.js web/viewer.css web/favicon.svg web/fonts/*.woff2
 var webFS embed.FS
 
 var fontName = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*\.woff2$`)
@@ -50,9 +50,9 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	serveAsset(w, "web/login.html", "text/html; charset=utf-8")
 }
 
-func (s *Server) handleCSS(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleBootJS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
-	serveAsset(w, "web/app.css", "text/css; charset=utf-8")
+	serveAsset(w, "web/boot.js", "text/javascript; charset=utf-8")
 }
 
 func (s *Server) handleJS(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +65,11 @@ func (s *Server) handleViewerCSS(w http.ResponseWriter, r *http.Request) {
 	serveAsset(w, "web/viewer.css", "text/css; charset=utf-8")
 }
 
+func (s *Server) handleFavicon(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	serveAsset(w, "web/favicon.svg", "image/svg+xml")
+}
+
 func (s *Server) handleFont(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("file")
 	if !fontName.MatchString(name) {
@@ -73,16 +78,6 @@ func (s *Server) handleFont(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "public, max-age=604800")
 	serveAsset(w, "web/fonts/"+name, "font/woff2")
-}
-
-func (s *Server) handleBootstrapCSS(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "public, max-age=86400")
-	serveAsset(w, "web/bootstrap.min.css", "text/css; charset=utf-8")
-}
-
-func (s *Server) handleBootstrapJS(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "public, max-age=86400")
-	serveAsset(w, "web/bootstrap.bundle.min.js", "text/javascript; charset=utf-8")
 }
 
 func serveAsset(w http.ResponseWriter, name, contentType string) {

@@ -107,21 +107,17 @@ func TestHTTPAuthIngestAndUI(t *testing.T) {
 		t.Fatalf("login page: %d", res.StatusCode)
 	}
 
-	res = do(t, client, http.MethodGet, ts.URL+"/app.css", "", "")
+	res = do(t, client, http.MethodGet, ts.URL+"/boot.js", "", "")
+	bootJS, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 200 {
-		t.Fatalf("css: %d", res.StatusCode)
+	if res.StatusCode != 200 || !strings.Contains(string(bootJS), "hosts-collapsed") {
+		t.Fatalf("boot js: %d", res.StatusCode)
 	}
-	res = do(t, client, http.MethodGet, ts.URL+"/bootstrap.min.css", "", "")
-	css, _ := io.ReadAll(res.Body)
+	res = do(t, client, http.MethodGet, ts.URL+"/favicon.svg", "", "")
+	fav, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 200 || !strings.Contains(string(css), "Bootstrap") {
-		t.Fatalf("bootstrap css: %d", res.StatusCode)
-	}
-	res = do(t, client, http.MethodGet, ts.URL+"/bootstrap.bundle.min.js", "", "")
-	res.Body.Close()
-	if res.StatusCode != 200 {
-		t.Fatalf("bootstrap js: %d", res.StatusCode)
+	if res.StatusCode != 200 || !strings.Contains(string(fav), "<svg") {
+		t.Fatalf("favicon: %d", res.StatusCode)
 	}
 
 	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/login", "", `{"username":"admin","password":"wrong-password"}`)
@@ -154,7 +150,7 @@ func TestHTTPAuthIngestAndUI(t *testing.T) {
 	}
 	page, _ = io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 200 || !strings.Contains(string(page), "Dlog") || !strings.Contains(string(page), "/app.js") || !strings.Contains(string(page), "/viewer.css") || !strings.Contains(string(page), `href="/account"`) || !strings.Contains(string(page), `id="range"`) || !strings.Contains(string(page), `id="log-scroll"`) || strings.Contains(string(page), `id="drawer"`) || strings.Contains(string(page), `id="manage"`) {
+	if res.StatusCode != 200 || !strings.Contains(string(page), "Dlog") || !strings.Contains(string(page), "/boot.js") || strings.Contains(string(page), "<script>") || !strings.Contains(string(page), "/app.js") || !strings.Contains(string(page), "/viewer.css") || !strings.Contains(string(page), `href="/account"`) || !strings.Contains(string(page), `id="admin-link"`) || strings.Contains(string(page), `id="settings-link"`) || !strings.Contains(string(page), `id="range"`) || !strings.Contains(string(page), `id="log-scroll"`) || !strings.Contains(string(page), `id="jump-latest"`) || strings.Contains(string(page), `id="drawer"`) || strings.Contains(string(page), `id="manage"`) {
 		t.Fatalf("console: %d", res.StatusCode)
 	}
 	res = do(t, client, http.MethodGet, ts.URL+"/viewer.css", "", "")
@@ -540,7 +536,7 @@ func TestChangePassword(t *testing.T) {
 	res = do(t, client, http.MethodGet, ts.URL+"/account", user, "")
 	page, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 200 || !strings.Contains(string(page), "Current password") || !strings.Contains(string(page), "Change password") || !strings.Contains(string(page), "Sign out other sessions") {
+	if res.StatusCode != 200 || !strings.Contains(string(page), "Current password") || !strings.Contains(string(page), "Change password") || !strings.Contains(string(page), "Sign out other sessions") || !strings.Contains(string(page), `id="admin-link"`) || strings.Contains(string(page), `id="settings-link"`) {
 		t.Fatalf("account page: %d", res.StatusCode)
 	}
 
@@ -986,6 +982,91 @@ func TestSettingsRegistrationAndPSK(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("replaced psk: %d", res.StatusCode)
+	}
+}
+
+func TestAdminDeleteContainer(t *testing.T) {
+	ts, st, _ := testServer(t)
+	client := noRedirect(t)
+	if _, err := st.CreateUser("ada", "reader-password", RoleUser); err != nil {
+		t.Fatal(err)
+	}
+	admin := login(t, client, ts.URL, "admin", testAdminPassword)
+	user := login(t, client, ts.URL, "ada", "reader-password")
+	host, _, err := st.CreateHost("edge-del")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	live := protocol.Record{ContainerID: "live00000001", ContainerName: "web", Image: "nginx", Stream: "stdout", Timestamp: now, Message: "serving"}
+	exited1 := protocol.Record{ContainerID: "dead00000001", ContainerName: "test-a", Image: "busybox", Stream: "stdout", Timestamp: now, Message: "done a"}
+	exited2 := protocol.Record{ContainerID: "dead00000002", ContainerName: "test-b", Image: "busybox", Stream: "stdout", Timestamp: now, Message: "done b"}
+	if _, err := st.Ingest(host.ID, []protocol.Record{live, exited1, exited2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Heartbeat(host.ID, protocol.Heartbeat{
+		ReplaceContainers: true,
+		Containers:        []protocol.ContainerSnapshot{{ID: live.ContainerID, Name: live.ContainerName, Image: live.Image, State: "running"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	res := do(t, client, http.MethodDelete, ts.URL+"/api/v1/admin/hosts/"+host.ID+"/containers/"+exited1.ContainerID, user, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("user delete container: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodDelete, ts.URL+"/api/v1/admin/hosts/"+host.ID+"/containers/"+live.ContainerID, admin, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("delete running container: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodDelete, ts.URL+"/api/v1/admin/hosts/"+host.ID+"/containers/"+exited1.ContainerID, admin, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete exited container: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodDelete, ts.URL+"/api/v1/admin/hosts/"+host.ID+"/containers/"+exited1.ContainerID, admin, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("delete again: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodDelete, ts.URL+"/api/v1/admin/hosts/"+host.ID+"/containers", admin, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("delete exited without state: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodDelete, ts.URL+"/api/v1/admin/hosts/"+host.ID+"/containers?state=exited", admin, "")
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"deleted":1`) {
+		t.Fatalf("delete all exited: %d %s", res.StatusCode, body)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/containers?host_id="+host.ID, admin, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), live.ContainerID) || strings.Contains(string(body), exited1.ContainerID) || strings.Contains(string(body), exited2.ContainerID) {
+		t.Fatalf("containers after delete: %d %s", res.StatusCode, body)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/logs?host_id="+host.ID, admin, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), "serving") || strings.Contains(string(body), "done a") || strings.Contains(string(body), "done b") {
+		t.Fatalf("logs after delete: %d %s", res.StatusCode, body)
+	}
+}
+
+func TestSlidingLimitPrunesKeys(t *testing.T) {
+	var lim slidingLimit
+	lim.hit("1.2.3.4")
+	if lim.blocked("1.2.3.4", 2, time.Minute) {
+		t.Fatal("should not be blocked after 1 hit")
+	}
+	if lim.blocked("1.2.3.4", 1, 0) {
+		t.Fatal("expired hit should not block")
+	}
+	if len(lim.hits) != 0 {
+		t.Fatalf("expired key leaked in map: %d", len(lim.hits))
 	}
 }
 

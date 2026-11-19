@@ -11,7 +11,7 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 		Name string `json:"name"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad request")
+		writeError(w, statusForDecode(err), "bad request")
 		return
 	}
 	name := strings.TrimSpace(body.Name)
@@ -33,7 +33,7 @@ func (s *Server) handleRenameGroup(w http.ResponseWriter, r *http.Request) {
 		Name string `json:"name"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad request")
+		writeError(w, statusForDecode(err), "bad request")
 		return
 	}
 	name := strings.TrimSpace(body.Name)
@@ -69,7 +69,7 @@ func (s *Server) handleSetHostGroup(w http.ResponseWriter, r *http.Request) {
 		GroupID *string `json:"group_id"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad request")
+		writeError(w, statusForDecode(err), "bad request")
 		return
 	}
 	if body.GroupID == nil {

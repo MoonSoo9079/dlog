@@ -30,6 +30,7 @@ var (
 	ErrRegistrationClosed = errors.New("registration closed")
 	ErrDirectory          = errors.New("directory unavailable")
 	ErrDirectoryAccount   = errors.New("directory account")
+	ErrContainerRunning   = errors.New("container is running")
 )
 
 type Store struct {

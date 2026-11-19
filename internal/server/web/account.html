@@ -6,6 +6,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#121214">
   <title>Account · Dlog</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/viewer.css">
 </head>
 <body class="min-h-dvh bg-ink-bg font-sans text-slate-200 antialiased" data-title="Account">
@@ -23,7 +24,6 @@
     <div class="ml-auto flex flex-wrap items-center gap-1.5">
       <a class="cursor-pointer rounded-md px-2.5 py-1.5 text-[13px] text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-100" href="/">Logs</a>
       <a id="admin-link" class="cursor-pointer rounded-md px-2.5 py-1.5 text-[13px] text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-100" href="/admin" hidden>Admin</a>
-      <a id="settings-link" class="cursor-pointer rounded-md px-2.5 py-1.5 text-[13px] text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-100" href="/admin#general" hidden>Settings</a>
       <button type="button" id="logout" class="cursor-pointer rounded-md px-2.5 py-1.5 text-[13px] text-slate-500 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200">Log out</button>
     </div>
   </header>
@@ -48,7 +48,7 @@
     </form>
   </main>
   <div class="pointer-events-none fixed bottom-5 left-1/2 z-50 -translate-x-1/2">
-    <div id="toast" class="pointer-events-auto rounded-md border border-ink-edge bg-ink-chrome px-4 py-2.5 text-[13px] text-slate-200" role="status" aria-live="polite" hidden>
+    <div id="toast" class="dlog-toast pointer-events-auto rounded-md border border-ink-edge bg-ink-chrome px-4 py-2.5 text-[13px] text-slate-200 shadow-lg" role="status" aria-live="polite" hidden>
       <div id="toast-body"></div>
     </div>
   </div>

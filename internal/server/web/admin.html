@@ -6,6 +6,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#121214">
   <title>Admin · Dlog</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/viewer.css">
 </head>
 <body class="flex h-dvh flex-col overflow-hidden bg-ink-bg font-sans text-slate-200 antialiased" data-title="Admin">
@@ -31,7 +32,7 @@
       <button type="button" id="nav-hosts" class="admin-nav-btn is-active shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Hosts</button>
       <span class="admin-nav-label hidden px-4 pb-1 pt-5 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500 md:block">Settings</span>
       <button type="button" id="nav-general" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">General</button>
-      <button type="button" id="nav-registration" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Registration</button>
+      <button type="button" id="nav-registration" class="admin-nav-btn flex shrink-0 cursor-pointer appearance-none items-center justify-between gap-2 whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4"><span>Registration</span><span id="pending-badge" class="rounded-full bg-amber-500/20 px-1.5 py-0.5 font-mono text-[10px] font-medium tabular-nums text-amber-300" hidden></span></button>
       <button type="button" id="nav-psk" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Shared key</button>
       <button type="button" id="nav-groups" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Groups</button>
       <button type="button" id="nav-accounts" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Accounts</button>
@@ -41,7 +42,7 @@
       <div class="mx-auto max-w-5xl px-4 py-8 md:px-8">
         <section id="panel-hosts">
           <h1 class="text-lg font-semibold tracking-tight text-slate-100">Hosts</h1>
-          <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">Agents that hold this server's key register themselves. The hostname is how an agent is recognized and stays put. A display name is what the log list shows. Put a host in one group, or disable a host to stop it.</p>
+          <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">Agents that hold this server's key register themselves. The hostname is how an agent is recognized and stays put. A display name is what the log list shows. Put a host in one group, disable a host to stop it, or remove exited containers and their logs.</p>
           <label class="sr-only" for="host-admin-q">Search hosts</label>
           <input id="host-admin-q" class="mt-5 h-8 w-full max-w-sm cursor-text rounded-md border border-ink-edge bg-ink-field px-2.5 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out placeholder:text-slate-500 hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" type="search" placeholder="Search hosts" autocomplete="off" spellcheck="false">
           <div id="admin-hosts" class="mt-4 border-t border-ink-line"></div>
@@ -253,7 +254,7 @@
     </main>
   </div>
   <div class="pointer-events-none fixed bottom-5 left-1/2 z-50 -translate-x-1/2">
-    <div id="toast" class="pointer-events-auto rounded-md border border-ink-edge bg-ink-chrome px-4 py-2.5 text-[13px] text-slate-200" role="status" aria-live="polite" hidden>
+    <div id="toast" class="dlog-toast pointer-events-auto rounded-md border border-ink-edge bg-ink-chrome px-4 py-2.5 text-[13px] text-slate-200 shadow-lg" role="status" aria-live="polite" hidden>
       <div id="toast-body"></div>
     </div>
   </div>

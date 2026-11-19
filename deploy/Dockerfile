@@ -13,18 +13,17 @@ RUN set -eu; \
     if [ -n "${TARGETOS}" ]; then export GOOS="${TARGETOS}"; fi; \
     if [ -n "${TARGETARCH}" ]; then export GOARCH="${TARGETARCH}"; fi; \
     go build -trimpath -ldflags="-s -w -X dlog/internal/version.Version=${ver}" -o /out/dlog-server ./cmd/server \
- && go build -trimpath -ldflags="-s -w -X dlog/internal/version.Version=${ver}" -o /out/dlog-agent ./cmd/agent
+ && go build -trimpath -ldflags="-s -w -X dlog/internal/version.Version=${ver}" -o /out/dlog-agent ./cmd/agent \
+ && install -d -m 0750 -o 65532 -g 65532 /out/var/lib/dlog
 
-FROM alpine:3.22 AS server
-RUN apk add --no-cache ca-certificates su-exec \
- && adduser -D -u 65532 -H dlog
+FROM gcr.io/distroless/static-debian12:nonroot AS server
 COPY --from=build /out/dlog-server /usr/local/bin/dlog-server
-COPY deploy/docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
+COPY --from=build /out/var/lib /var/lib
 ENV DLOG_DATA_DIR=/var/lib/dlog \
     DLOG_ADDR=:8080
 EXPOSE 8080
-ENTRYPOINT ["/docker-entrypoint.sh"]
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/dlog-server"]
 
 FROM alpine:3.22 AS agent
 RUN apk add --no-cache ca-certificates

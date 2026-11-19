@@ -93,6 +93,17 @@ func (s *StateFile) Advance(recs []protocol.Record) error {
 	return s.saveLocked()
 }
 
+// DeleteCursor removes the saved cursor for a destroyed container.
+func (s *StateFile) DeleteCursor(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.Cursors[id]; !ok {
+		return nil
+	}
+	delete(s.Cursors, id)
+	return s.saveLocked()
+}
+
 func (s *StateFile) saveLocked() error {
 	if s.Cursors == nil {
 		s.Cursors = map[string]Cursor{}

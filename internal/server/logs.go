@@ -171,11 +171,19 @@ func (s *Store) Logs(f LogFilter) ([]protocol.LogLine, error) {
 }
 
 func (s *Store) PurgeLogs(before time.Time) (int64, error) {
-	res, err := s.db.Exec(`DELETE FROM logs WHERE ts<?`, before.UnixMilli())
-	if err != nil {
-		return 0, err
+	cutoff := before.UnixMilli()
+	var total int64
+	for {
+		res, err := s.db.Exec(`DELETE FROM logs WHERE id IN (SELECT id FROM logs WHERE ts<? LIMIT 5000)`, cutoff)
+		if err != nil {
+			return total, err
+		}
+		n, _ := res.RowsAffected()
+		total += n
+		if n < 5000 {
+			return total, nil
+		}
 	}
-	return res.RowsAffected()
 }
 
 func reverseLines(lines []protocol.LogLine) {

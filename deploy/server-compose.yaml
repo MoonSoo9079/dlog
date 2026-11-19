@@ -12,6 +12,9 @@
 # read by the server. Leave DLOG_ADDR at :8080 unless you change that mapping.
 # Every DLOG_* variable the server reads is listed below. DLOG_DATA_DIR matches
 # the volume. An empty DLOG_HEALTH_URL probes 127.0.0.1 on the port in DLOG_ADDR.
+# The server image runs as UID/GID 65532 (nonroot). A named volume inherits that
+# ownership automatically; if you replace dlog-data with a host bind mount,
+# make that directory writable by UID 65532 (or set `user:` on this service).
 services:
   server:
     build:

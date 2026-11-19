@@ -6,12 +6,9 @@
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#121214">
   <title>Dlog</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/viewer.css">
-  <script>
-    try {
-      if (localStorage.getItem("dlog.hosts-pane") === "closed") document.documentElement.classList.add("hosts-collapsed");
-    } catch (e) {}
-  </script>
+  <script src="/boot.js"></script>
 </head>
 <body class="h-dvh overflow-hidden bg-ink-bg font-sans text-slate-200 antialiased" data-title="Logs">
   <a href="#log-scroll" class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-50 focus:border focus:border-ink-edge focus:bg-ink-chrome focus:px-3 focus:py-2 focus:text-slate-100">Skip to logs</a>
@@ -38,7 +35,6 @@
         <span class="mx-1 hidden h-4 w-px bg-ink-line sm:block" aria-hidden="true"></span>
         <a class="cursor-pointer rounded-md px-2.5 py-1.5 text-[13px] text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-100" href="/account">Account</a>
         <a id="admin-link" class="cursor-pointer rounded-md px-2.5 py-1.5 text-[13px] text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-100" href="/admin" hidden>Admin</a>
-        <a id="settings-link" class="cursor-pointer rounded-md px-2.5 py-1.5 text-[13px] text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-100" href="/admin#general" hidden>Settings</a>
         <button type="button" id="logout" class="cursor-pointer rounded-md px-2.5 py-1.5 text-[13px] text-slate-500 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200">Log out</button>
       </div>
     </header>
@@ -67,13 +63,13 @@
         </div>
         <div id="hosts" class="min-h-0 flex-1 overflow-y-auto pb-4" aria-label="Hosts"></div>
       </aside>
-      <section id="log-pane" class="flex min-h-0 min-w-0 flex-1 flex-col bg-ink-bg">
+      <section id="log-pane" class="relative flex min-h-0 min-w-0 flex-1 flex-col bg-ink-bg">
         <div class="flex shrink-0 flex-col gap-2.5 border-b border-ink-line bg-ink-chrome px-4 py-3">
           <div id="chips" class="flex min-w-0 items-center overflow-x-auto" role="toolbar" aria-label="Containers"></div>
           <div class="flex flex-wrap items-center gap-2">
             <div class="dlog-field inline-flex h-8 w-full items-stretch overflow-hidden rounded-md border border-ink-edge bg-ink-field transition-colors duration-150 ease-in-out sm:w-72">
               <label for="q" class="flex cursor-pointer items-center border-r border-ink-edge px-2.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Filter</label>
-              <input id="q" class="min-w-0 flex-1 cursor-text bg-transparent px-2.5 font-mono text-[12px] text-slate-200 placeholder:text-slate-500 focus:outline-none" type="search" placeholder="This log only" autocomplete="off" spellcheck="false">
+              <input id="q" class="min-w-0 flex-1 cursor-text bg-transparent px-2.5 font-mono text-[12px] text-slate-200 placeholder:text-slate-500 focus:outline-none" type="search" placeholder="Filter messages" autocomplete="off" spellcheck="false">
               <kbd class="pointer-events-none mr-2 hidden self-center border border-ink-edge px-1.5 py-0.5 font-mono text-[10px] text-slate-500 sm:inline" aria-hidden="true">/</kbd>
             </div>
             <div class="dlog-field inline-flex h-8 items-stretch overflow-hidden rounded-md border border-ink-edge bg-ink-field transition-colors duration-150 ease-in-out">
@@ -109,13 +105,20 @@
           <div id="log-empty" class="px-4 py-14">
             <p data-empty-title class="text-[13px] font-medium text-slate-300">Select a host</p>
             <p data-empty-hint class="mt-1.5 max-w-md text-[13px] leading-relaxed text-slate-400">Hosts appear after an agent registers with the shared key.</p>
+            <button type="button" id="reset-filters" class="mt-4 inline-flex h-8 cursor-pointer items-center rounded-md border border-ink-edge bg-ink-field px-3 text-[12px] font-medium text-slate-300 transition-colors duration-150 ease-in-out hover:border-slate-500 hover:text-slate-100" hidden>Reset filters</button>
           </div>
         </div>
+        <button type="button" id="jump-latest" class="absolute bottom-4 right-5 z-20 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-amber-500/70 bg-ink-chrome px-3.5 text-[12px] font-medium text-amber-300 shadow-lg transition-colors duration-150 ease-in-out hover:border-amber-500 hover:text-amber-200" hidden>
+          <svg class="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 3.5v9M4.5 9 8 12.5 11.5 9"/>
+          </svg>
+          <span id="jump-latest-label">Jump to latest</span>
+        </button>
       </section>
     </div>
   </div>
   <div class="pointer-events-none fixed bottom-5 left-1/2 z-50 -translate-x-1/2">
-    <div id="toast" class="pointer-events-auto rounded-md border border-ink-edge bg-ink-chrome px-4 py-2.5 text-[13px] text-slate-200" role="status" aria-live="polite" hidden>
+    <div id="toast" class="dlog-toast pointer-events-auto rounded-md border border-ink-edge bg-ink-chrome px-4 py-2.5 text-[13px] text-slate-200 shadow-lg" role="status" aria-live="polite" hidden>
       <div id="toast-body"></div>
     </div>
   </div>

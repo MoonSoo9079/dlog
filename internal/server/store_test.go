@@ -268,6 +268,15 @@ func TestPurgeAndSession(t *testing.T) {
 	if err != nil || !ok || got.Username != "ada" {
 		t.Fatalf("touch: %+v %v %v", got, ok, err)
 	}
+	if _, ok, renewed, err := s.touchSession(raw, time.Hour); err != nil || !ok || renewed {
+		t.Fatalf("throttled touch should not rewrite immediately: ok=%v renewed=%v err=%v", ok, renewed, err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET expires_at=? WHERE user_id=?`, time.Now().Add(time.Hour-2*time.Minute).UnixMilli(), acct.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, renewed, err := s.touchSession(raw, time.Hour); err != nil || !ok || !renewed {
+		t.Fatalf("stale touch should renew: ok=%v renewed=%v err=%v", ok, renewed, err)
+	}
 	if err := s.DeleteSession(raw); err != nil {
 		t.Fatal(err)
 	}
@@ -526,5 +535,75 @@ func TestRetentionSeedAndOfflineWindow(t *testing.T) {
 	got, err = s.Host(host.ID)
 	if err != nil || !got.Online {
 		t.Fatalf("offline inside 2m window: %+v %v", got, err)
+	}
+}
+
+func TestDeleteExitedContainers(t *testing.T) {
+	s := testStore(t)
+	host, _, err := s.CreateHost("web-03")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	recLive := protocol.Record{ContainerID: "live11111111", ContainerName: "live", Image: "app:1", Stream: "stdout", Timestamp: now, Message: "still running"}
+	recOld1 := protocol.Record{ContainerID: "old111111111", ContainerName: "test-1", Image: "busybox", Stream: "stdout", Timestamp: now, Message: "bye 1"}
+	recOld2 := protocol.Record{ContainerID: "old222222222", ContainerName: "test-2", Image: "busybox", Stream: "stderr", Timestamp: now, Message: "bye 2"}
+	if _, err := s.Ingest(host.ID, []protocol.Record{recLive, recOld1, recOld2}); err != nil {
+		t.Fatal(err)
+	}
+	// Heartbeat reports only the live container, marking the two test containers exited.
+	if err := s.Heartbeat(host.ID, protocol.Heartbeat{
+		ReplaceContainers: true,
+		Containers:        []protocol.ContainerSnapshot{{ID: recLive.ContainerID, Name: recLive.ContainerName, Image: recLive.Image, State: "running"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	gotHost, err := s.Host(host.ID)
+	if err != nil || gotHost.ContainerCount != 3 || gotHost.ExitedCount != 2 {
+		t.Fatalf("counts: %+v %v", gotHost, err)
+	}
+	if err := s.DeleteContainer(host.ID, recLive.ContainerID); !errors.Is(err, ErrContainerRunning) {
+		t.Fatalf("delete running container: %v", err)
+	}
+	if err := s.DeleteContainer(host.ID, "missing12345"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("delete missing container: %v", err)
+	}
+	if err := s.DeleteContainer(host.ID, recOld1.ContainerID); err != nil {
+		t.Fatalf("delete exited container: %v", err)
+	}
+	lines, err := s.Logs(LogFilter{HostID: host.ID, ContainerID: recOld1.ContainerID})
+	if err != nil || len(lines) != 0 {
+		t.Fatalf("deleted container logs remained: %+v %v", lines, err)
+	}
+	lines, err = s.Logs(LogFilter{HostID: host.ID, ContainerID: recLive.ContainerID})
+	if err != nil || len(lines) != 1 || lines[0].Message != "still running" {
+		t.Fatalf("live container logs affected: %+v %v", lines, err)
+	}
+	n, err := s.DeleteExitedContainers(host.ID)
+	if err != nil || n != 1 {
+		t.Fatalf("delete remaining exited: %d %v", n, err)
+	}
+	if _, err := s.DeleteExitedContainers("hst_missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("delete exited missing host: %v", err)
+	}
+	ctrs, err := s.Containers(host.ID)
+	if err != nil || len(ctrs) != 1 || ctrs[0].ID != recLive.ContainerID {
+		t.Fatalf("remaining containers: %+v %v", ctrs, err)
+	}
+	gotHost, err = s.Host(host.ID)
+	if err != nil || gotHost.ContainerCount != 1 || gotHost.ExitedCount != 0 {
+		t.Fatalf("counts after delete: %+v %v", gotHost, err)
+	}
+	// Once the host is offline, a container still marked running can be removed.
+	past := time.Now().Add(-10 * time.Minute).UnixMilli()
+	if _, err := s.db.Exec(`UPDATE hosts SET last_seen_at=? WHERE id=?`, past, host.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteContainer(host.ID, recLive.ContainerID); err != nil {
+		t.Fatalf("delete container on offline host: %v", err)
+	}
+	ctrs, err = s.Containers(host.ID)
+	if err != nil || len(ctrs) != 0 {
+		t.Fatalf("containers after offline delete: %+v %v", ctrs, err)
 	}
 }

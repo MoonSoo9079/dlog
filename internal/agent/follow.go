@@ -128,6 +128,9 @@ func (a *Agent) handleEvent(ctx context.Context, ev Event) {
 		}
 	case "destroy", "remove":
 		a.cancelFollow(id)
+		if err := a.state.DeleteCursor(id); err != nil {
+			slog.Debug("remove cursor", "id", shortID(id), "err", err)
+		}
 	}
 }
 

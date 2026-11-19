@@ -42,7 +42,7 @@ func (s *Server) handleRenameHost(w http.ResponseWriter, r *http.Request) {
 		DisplayName *string `json:"display_name"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad request")
+		writeError(w, statusForDecode(err), "bad request")
 		return
 	}
 	if body.Hostname == nil && body.DisplayName == nil {
@@ -112,6 +112,32 @@ func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Info("host deleted", "id", id)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleDeleteContainer(w http.ResponseWriter, r *http.Request) {
+	hostID := r.PathValue("id")
+	containerID := r.PathValue("container_id")
+	if err := s.store.DeleteContainer(hostID, containerID); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	slog.Info("container deleted", "host_id", hostID, "container_id", containerID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleDeleteExitedContainers(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("state") != "exited" {
+		writeError(w, http.StatusBadRequest, "state=exited is required")
+		return
+	}
+	hostID := r.PathValue("id")
+	n, err := s.store.DeleteExitedContainers(hostID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	slog.Info("exited containers deleted", "host_id", hostID, "count", n)
+	writeJSON(w, http.StatusOK, map[string]int64{"deleted": n})
 }
 
 func (s *Server) visibleHost(w http.ResponseWriter, r *http.Request, hostID string) (Host, bool) {

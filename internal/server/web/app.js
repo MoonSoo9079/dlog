@@ -20,6 +20,14 @@ if (loginError) {
   }
 }
 
+const logoutBtn = document.getElementById("logout");
+if (logoutBtn) {
+  logoutBtn.addEventListener("click", async () => {
+    try { await api("/api/v1/logout", { method: "POST", body: "{}" }); } catch (e) { /* redirect anyway */ }
+    location.href = "/login";
+  });
+}
+
 if (document.getElementById("hosts")) {
   initApp();
 }
@@ -50,6 +58,9 @@ function initApp() {
   const qInput = document.getElementById("q");
   const streamSel = document.getElementById("stream");
   const followBtn = document.getElementById("follow");
+  const resetFiltersBtn = document.getElementById("reset-filters");
+  const jumpLatestBtn = document.getElementById("jump-latest");
+  const jumpLatestLabel = document.getElementById("jump-latest-label");
   let hosts = [];
   let groups = [];
   let collapsed = loadCollapsed();
@@ -58,17 +69,15 @@ function initApp() {
   let hostId = "";
   let containerId = "";
   let q = "";
+  let paintedQ = "";
   let stream = "";
   let follow = true;
   let gen = 0;
   let ready = false;
   let polling = false;
   let viewer = null;
+  let unread = 0;
 
-  document.getElementById("logout").addEventListener("click", async () => {
-    try { await api("/api/v1/logout", { method: "POST", body: "{}" }); } catch (e) { /* redirect anyway */ }
-    location.href = "/login";
-  });
   followBtn.addEventListener("click", () => {
     follow = !follow;
     followBtn.classList.toggle("is-on", follow);
@@ -89,6 +98,33 @@ function initApp() {
     sinceLocal = sinceInput.value;
     if (range === "from") reload();
   });
+  if (resetFiltersBtn) {
+    resetFiltersBtn.addEventListener("click", () => {
+      containerId = "";
+      q = "";
+      stream = "";
+      range = "";
+      sinceLocal = "";
+      qInput.value = "";
+      streamSel.value = "";
+      rangeSel.value = "";
+      sinceInput.value = "";
+      sinceInput.hidden = true;
+      paintChips();
+      reload();
+    });
+  }
+  if (jumpLatestBtn) {
+    jumpLatestBtn.addEventListener("click", () => {
+      pinBottom();
+      unread = 0;
+      syncJumpButton();
+    });
+  }
+  view().addEventListener("scroll", () => {
+    if (nearBottom()) unread = 0;
+    syncJumpButton();
+  }, { passive: true });
   document.addEventListener("selectionchange", () => {
     (scroller || logEl).style.overflowAnchor = selectingLog() ? "none" : "";
   });
@@ -102,6 +138,20 @@ function initApp() {
       reload();
     }, 250);
   });
+  qInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      if (qInput.value) {
+        clearTimeout(qTimer);
+        qInput.value = "";
+        if (q) {
+          q = "";
+          reload();
+        }
+      } else {
+        qInput.blur();
+      }
+    }
+  });
   hostQEl.addEventListener("input", () => paintHosts());
   if (hostsToggle) {
     const hostsPaneKey = "dlog.hosts-pane";
@@ -111,7 +161,11 @@ function initApp() {
       hostsToggle.setAttribute("aria-label", open ? "Hide hosts" : "Show hosts");
       try { localStorage.setItem(hostsPaneKey, open ? "open" : "closed"); } catch (e) { /* keep the choice for this page */ }
     };
-    applyHostsPane(!document.documentElement.classList.contains("hosts-collapsed"));
+    let startClosed = document.documentElement.classList.contains("hosts-collapsed");
+    try {
+      if (localStorage.getItem(hostsPaneKey) === "closed") startClosed = true;
+    } catch (e) {}
+    applyHostsPane(!startClosed);
     hostsToggle.addEventListener("click", () => {
       applyHostsPane(document.documentElement.classList.contains("hosts-collapsed"));
     });
@@ -134,6 +188,7 @@ function initApp() {
     viewer = me;
     if (me && me.role === "admin") showAdminLinks();
     paintHosts();
+    paintChips();
   }).catch(() => {});
 
   async function refreshHosts() {
@@ -286,32 +341,82 @@ function initApp() {
   function paintChips() {
     chipsEl.replaceChildren();
     if (!hostId) return;
-    chipsEl.append(chip("", "All containers", containerId === "", false));
+    const isAdmin = !!(viewer && viewer.role === "admin");
+    const activeHost = hosts.find((h) => h.id === hostId);
+    const hostOnline = !!(activeHost && activeHost.online);
+    chipsEl.append(chip(null, "All containers", containerId === "", false, false));
     for (const c of containers) {
-      const label = c.name + (c.state === "running" ? "" : " · " + c.state);
-      chipsEl.append(chip(c.id, label, c.id === containerId, c.state !== "running"));
+      const live = hostOnline && c.state === "running";
+      const stateLabel = c.state === "running" ? "offline" : c.state;
+      const label = c.name + (live ? "" : " · " + stateLabel);
+      chipsEl.append(chip(c, label, c.id === containerId, !live, isAdmin && !live));
     }
   }
 
-  function chip(id, label, selected, exited) {
+  function chip(c, label, selected, exited, deletable) {
+    const id = c ? c.id : "";
     const tone = selected
       ? "relative z-10 border-amber-500 bg-amber-500 text-[#1c1408]"
       : "border-ink-edge bg-ink-field text-slate-300 hover:border-slate-500 hover:text-slate-100";
-    return el("button", {
-      type: "button",
-      class: "h-8 max-w-[16rem] shrink-0 cursor-pointer truncate border px-3 text-[12px] font-medium transition-colors duration-150 ease-in-out " + tone + (exited ? " opacity-50" : ""),
-      title: label,
-      onclick: () => {
-        containerId = id;
+    const select = () => {
+      if (containerId === id) return;
+      containerId = id;
+      paintChips();
+      reload();
+    };
+    if (!deletable) {
+      return el("button", {
+        type: "button",
+        class: "inline-flex h-8 max-w-[16rem] shrink-0 cursor-pointer items-center truncate border px-3 text-[12px] font-medium transition-colors duration-150 ease-in-out " + tone + (exited ? " opacity-50" : ""),
+        title: label,
+        onclick: select,
+      }, [label]);
+    }
+    const delCls = selected
+      ? "inline-flex w-7 shrink-0 cursor-pointer items-center justify-center border-l border-[#1c1408]/25 bg-transparent text-[#1c1408] transition-colors duration-150 ease-in-out hover:bg-[#1c1408]/15"
+      : "inline-flex w-7 shrink-0 cursor-pointer items-center justify-center border-l border-ink-edge bg-transparent text-slate-400 transition-colors duration-150 ease-in-out hover:bg-status-down/15 hover:text-clay";
+    return el("span", {
+      class: "inline-flex h-8 shrink-0 items-stretch border transition-colors duration-150 ease-in-out " + tone + (selected ? "" : " opacity-60 hover:opacity-100 focus-within:opacity-100"),
+    }, [
+      el("button", {
+        type: "button",
+        class: "max-w-[14rem] cursor-pointer truncate bg-transparent px-3 text-[12px] font-medium text-inherit",
+        title: label,
+        onclick: select,
+      }, [label]),
+      el("button", {
+        type: "button",
+        class: delCls,
+        title: "Delete " + c.name + " and its stored logs",
+        "aria-label": "Delete container " + c.name,
+        onclick: () => deleteContainer(c),
+      }, [iconClose()]),
+    ]);
+  }
+
+  async function deleteContainer(c) {
+    if (!confirm("Delete container " + c.name + " and its stored logs?")) return;
+    const myHost = hostId;
+    try {
+      await api("/api/v1/admin/hosts/" + encodeURIComponent(myHost) + "/containers/" + encodeURIComponent(c.id), { method: "DELETE" });
+      if (myHost === hostId) {
+        containers = containers.filter((item) => item.id !== c.id);
+        if (containerId === c.id) containerId = "";
         paintChips();
         reload();
-      },
-    }, [label]);
+      }
+      refreshHosts();
+      toast("Container deleted");
+    } catch (err) {
+      toast(err.message);
+      if (myHost === hostId) refreshContainers();
+    }
   }
 
   async function reload() {
     const my = ++gen;
     ready = false;
+    unread = 0;
     if (!hostId) {
       lines = [];
       paintLines();
@@ -345,15 +450,18 @@ function initApp() {
       const stick = nearBottom() && !selectingLog();
       for (const ln of data.lines) {
         lines.push(ln);
-        logEl.append(lineNode(ln));
+        logEl.append(lineNode(ln, q));
       }
+      if (!stick) unread += data.lines.length;
       if (lines.length > 3000) {
         lines = lines.slice(lines.length - 3000);
         paintLines({ stick });
       } else {
         const label = lineLabel(lines.length);
         if (metaEl.textContent !== label) metaEl.textContent = label;
+        paintEmpty();
         if (stick) pinBottom();
+        syncJumpButton();
       }
     } catch (e) {
       if (e.message !== "unauthorized") toast(e.message);
@@ -387,6 +495,17 @@ function initApp() {
     if (node.scrollTop !== top) node.scrollTop = top;
   }
 
+  function syncJumpButton() {
+    if (!jumpLatestBtn) return;
+    const node = view();
+    const scrollable = node.scrollHeight - node.clientHeight > 64;
+    const show = lines.length > 0 && scrollable && !nearBottom();
+    jumpLatestBtn.hidden = !show;
+    if (show && jumpLatestLabel) {
+      jumpLatestLabel.textContent = unread > 0 ? unread + " new" : "Jump to latest";
+    }
+  }
+
   function sameLineIds(want) {
     if (logEl.childElementCount !== want.length) return false;
     let i = 0;
@@ -408,44 +527,58 @@ function initApp() {
       want[i] = id;
       wantSet.add(id);
     }
-    const changed = !sameLineIds(want);
+    const qChanged = q !== paintedQ;
+    const changed = qChanged || !sameLineIds(want);
     const node = view();
     const manageScroll = changed && !!(opts.stick || opts.anchorHeight != null);
     if (manageScroll) node.style.overflowAnchor = "none";
     if (changed) {
-      const stale = [];
-      for (const node of logEl.children) {
-        if (!wantSet.has(node.getAttribute("data-id"))) stale.push(node);
-      }
-      for (const node of stale) node.remove();
-      let cursor = logEl.firstElementChild;
-      for (let i = 0; i < want.length; i++) {
-        const id = want[i];
-        if (cursor && cursor.getAttribute("data-id") === id) {
-          cursor = cursor.nextElementSibling;
-          continue;
+      if (qChanged) {
+        logEl.replaceChildren();
+        for (let i = 0; i < lines.length; i++) logEl.append(lineNode(lines[i], q));
+        paintedQ = q;
+      } else {
+        const stale = [];
+        for (const node of logEl.children) {
+          if (!wantSet.has(node.getAttribute("data-id"))) stale.push(node);
         }
-        let found = null;
-        for (let n = cursor; n; n = n.nextElementSibling) {
-          if (n.getAttribute("data-id") === id) { found = n; break; }
+        for (const node of stale) node.remove();
+        let cursor = logEl.firstElementChild;
+        for (let i = 0; i < want.length; i++) {
+          const id = want[i];
+          if (cursor && cursor.getAttribute("data-id") === id) {
+            cursor = cursor.nextElementSibling;
+            continue;
+          }
+          let found = null;
+          for (let n = cursor; n; n = n.nextElementSibling) {
+            if (n.getAttribute("data-id") === id) { found = n; break; }
+          }
+          logEl.insertBefore(found || lineNode(lines[i], q), cursor);
         }
-        logEl.insertBefore(found || lineNode(lines[i]), cursor);
-      }
-      while (cursor) {
-        const next = cursor.nextElementSibling;
-        cursor.remove();
-        cursor = next;
+        while (cursor) {
+          const next = cursor.nextElementSibling;
+          cursor.remove();
+          cursor = next;
+        }
       }
     }
     const label = hostId ? (lines.length ? lineLabel(lines.length) : "No lines") : "Select a host";
     if (metaEl.textContent !== label) metaEl.textContent = label;
     paintEmpty();
-    if (opts.stick) pinBottom();
-    else if (opts.anchorHeight != null) {
+    if (opts.stick) {
+      pinBottom();
+      unread = 0;
+    } else if (opts.anchorHeight != null) {
       const top = node.scrollHeight - opts.anchorHeight;
       if (node.scrollTop !== top) node.scrollTop = top;
     }
     if (manageScroll) node.style.overflowAnchor = selectingLog() ? "none" : "";
+    syncJumpButton();
+  }
+
+  function hasActiveFilters() {
+    return !!(containerId || q || stream || range);
   }
 
   function paintEmpty() {
@@ -456,9 +589,11 @@ function initApp() {
     if (hostId) {
       emptyTitle.textContent = "No lines in this view";
       emptyHint.textContent = "The container, stream, and time filters all apply. Older loads the previous page.";
+      if (resetFiltersBtn) resetFiltersBtn.hidden = !hasActiveFilters();
     } else {
       emptyTitle.textContent = "Select a host";
       emptyHint.textContent = "Hosts appear after an agent registers with the shared key.";
+      if (resetFiltersBtn) resetFiltersBtn.hidden = true;
     }
   }
 
@@ -502,7 +637,8 @@ function hostLabel(h) {
 
 function hostDetail(h) {
   const status = h.status !== "enabled" ? "disabled" : (h.online ? "online" : "offline");
-  const parts = [status, ago(h.last_seen_at), h.container_count + " containers"];
+  const ctrs = h.container_count + (h.container_count === 1 ? " container" : " containers");
+  const parts = [status, ago(h.last_seen_at), ctrs];
   if (String(h.display_name || "").trim()) parts.push(h.hostname);
   if (h.dropped) parts.push("dropped " + h.dropped);
   return parts.join(" · ");
@@ -518,23 +654,74 @@ const fieldBox = "h-8 rounded-md border border-ink-edge bg-ink-field px-2.5 text
 const selectCls = "ui-select h-8 cursor-pointer rounded-md border border-ink-edge bg-ink-field pl-2.5 pr-8 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out hover:border-slate-500 focus:border-amber-500/70 focus:outline-none";
 const emptyRow = "px-1 py-6 text-[13px] text-slate-400";
 
-function statusBadge(h) {
-  if (h.status !== "enabled") return el("span", { class: "font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-clay" }, ["disabled"]);
-  if (h.online) return el("span", { class: "font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-status-on" }, ["online"]);
-  return el("span", { class: "font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500" }, ["offline"]);
+function statusPill(dotClass, textClass, label) {
+  return el("span", { class: "inline-flex items-center gap-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.14em] " + textClass }, [
+    el("span", { class: "h-1.5 w-1.5 shrink-0 rounded-full " + dotClass, "aria-hidden": "true" }),
+    label,
+  ]);
 }
 
-function lineNode(ln) {
+function statusBadge(h) {
+  if (h.status !== "enabled") return statusPill("bg-status-down", "text-clay", "disabled");
+  if (h.online) return statusPill("bg-status-on", "text-status-on", "online");
+  return statusPill("bg-status-off", "text-slate-500", "offline");
+}
+
+function highlightNodes(text, query) {
+  const str = String(text || "");
+  if (!query) return [str];
+  const lower = str.toLowerCase();
+  const needle = query.toLowerCase();
+  const out = [];
+  let pos = 0;
+  let hits = 0;
+  while (pos < str.length && hits < 32) {
+    const idx = lower.indexOf(needle, pos);
+    if (idx === -1) break;
+    if (idx > pos) out.push(str.slice(pos, idx));
+    out.push(el("mark", { class: "log-hit" }, [str.slice(idx, idx + needle.length)]));
+    pos = idx + needle.length;
+    hits++;
+  }
+  if (pos < str.length) out.push(str.slice(pos));
+  return out;
+}
+
+function copyLogLine(ln) {
+  const text = (ln.timestamp || "") + " " + (ln.container_name || ln.container_id) + " " + ln.stream + " " + (ln.message || "");
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => toast("Line copied")).catch(() => toast("Could not copy"));
+    return;
+  }
+  toast("Clipboard unavailable");
+}
+
+function lineNode(ln, query) {
   const stderr = ln.stream === "stderr";
+  const copyBtn = el("button", {
+    type: "button",
+    class: "copy-btn inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded border border-ink-edge bg-ink-chrome text-slate-400 hover:border-slate-500 hover:text-slate-100",
+    title: "Copy line",
+    "aria-label": "Copy log line",
+    onclick: () => copyLogLine(ln),
+  }, [iconCopy()]);
   return el("div", {
     class: "log-line log-cols font-mono text-[12px] transition-colors duration-150 ease-in-out hover:bg-white/[0.03]" + (stderr ? " stderr" : ""),
     "data-id": String(ln.id),
   }, [
-    el("span", { class: "ts tabular-nums text-slate-400" }, [formatTime(ln.timestamp)]),
-    el("span", { class: "name text-sand" }, [ln.container_name || ln.container_id]),
+    el("span", { class: "ts tabular-nums text-slate-400", title: fullTime(ln.timestamp) }, [formatTime(ln.timestamp)]),
+    el("span", { class: "name text-sand", title: ln.container_name || ln.container_id }, [ln.container_name || ln.container_id]),
     el("span", { class: "stream text-[11px] " + (stderr ? "text-clay" : "text-slate-400") }, [ln.stream]),
-    el("span", { class: "msg " + (stderr ? "text-clay" : "text-slate-200") }, [ln.message]),
+    el("span", { class: "msg " + (stderr ? "text-clay" : "text-slate-200") }, highlightNodes(ln.message, query)),
+    copyBtn,
   ]);
+}
+
+function fullTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  return d.toLocaleString() + " (" + iso + ")";
 }
 
 function lineLabel(n) {
@@ -582,6 +769,8 @@ function initAdmin() {
   let generalDirty = false;
   let registrationDirty = false;
   let directoryDirty = false;
+  const expandedHosts = new Set();
+  const hostContainers = new Map();
 
   for (const id of sections) {
     document.getElementById("nav-" + id).addEventListener("click", () => {
@@ -738,6 +927,16 @@ function initAdmin() {
       const data = await api("/api/v1/hosts");
       hosts = data.hosts || [];
       groups = (data.groups || []).slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id));
+      const hostIds = new Set(hosts.map((h) => h.id));
+      for (const id of [...expandedHosts]) {
+        if (!hostIds.has(id)) {
+          expandedHosts.delete(id);
+          hostContainers.delete(id);
+        }
+      }
+      if (expandedHosts.size) {
+        await Promise.all([...expandedHosts].map((id) => fetchHostContainers(id)));
+      }
       if (force || !hostList.contains(document.activeElement)) paintHosts();
       if (force || !groupList.contains(document.activeElement)) paintGroups();
       const groupSelect = document.getElementById("default-group");
@@ -747,6 +946,27 @@ function initAdmin() {
     } catch (err) {
       if (err.message !== "unauthorized") toast(err.message);
     }
+  }
+
+  async function fetchHostContainers(id) {
+    try {
+      const data = await api("/api/v1/containers?host_id=" + encodeURIComponent(id));
+      hostContainers.set(id, data.containers || []);
+    } catch (err) {
+      if (err.message !== "unauthorized") toast(err.message);
+    }
+  }
+
+  async function toggleHostContainers(id) {
+    if (expandedHosts.has(id)) {
+      expandedHosts.delete(id);
+      paintHosts();
+      return;
+    }
+    expandedHosts.add(id);
+    paintHosts();
+    await fetchHostContainers(id);
+    if (expandedHosts.has(id)) paintHosts();
   }
 
   function matches(h, query) {
@@ -807,7 +1027,8 @@ function initAdmin() {
         saveDisplayName(h, nameInput.value);
       }
     });
-    const meta = h.hostname + " · seen " + ago(h.last_seen_at) + (h.dropped ? " · dropped " + h.dropped : "") + " · " + h.container_count + " containers";
+    const ctrCount = h.container_count + (h.container_count === 1 ? " container" : " containers") + (h.exited_count ? " (" + h.exited_count + " exited)" : "");
+    const meta = h.hostname + " · seen " + ago(h.last_seen_at) + (h.dropped ? " · dropped " + h.dropped : "") + " · " + ctrCount;
     row.append(
       el("div", { class: "flex flex-wrap items-center gap-2" }, [
         el("span", { class: "min-w-0 flex-1 truncate text-[14px] font-medium text-slate-100" }, [hostLabel(h)]),
@@ -818,7 +1039,76 @@ function initAdmin() {
       el("div", { class: "mt-3 flex flex-wrap items-center gap-2" }, [nameInput, saveName]),
       el("div", { class: "mt-2" }, [sel]),
     );
+    if (h.container_count > 0 || expandedHosts.has(h.id)) {
+      const open = expandedHosts.has(h.id);
+      const toggleLabel = h.exited_count
+        ? "Containers (" + h.container_count + " · " + h.exited_count + " exited)"
+        : "Containers (" + h.container_count + ")";
+      const toggleBtn = el("button", {
+        type: "button",
+        class: "host-containers-toggle mt-3 inline-flex cursor-pointer items-center gap-1.5 text-[12px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:text-slate-200" + (open ? " is-open" : ""),
+        "aria-expanded": open ? "true" : "false",
+        onclick: () => toggleHostContainers(h.id),
+      }, [iconChevron(), el("span", {}, [toggleLabel])]);
+      row.append(toggleBtn);
+      if (open) row.append(hostContainersBox(h));
+    }
     return row;
+  }
+
+  function hostContainersBox(h) {
+    const box = el("div", { class: "mt-2 rounded-md border border-ink-line bg-ink-chrome px-3 py-2" });
+    if (!hostContainers.has(h.id)) {
+      box.append(el("div", { class: "py-2 text-[12px] text-slate-400" }, ["Loading containers..."]));
+      return box;
+    }
+    const list = (hostContainers.get(h.id) || []).slice().sort((a, b) => {
+      const aLive = h.online && a.state === "running" ? 1 : 0;
+      const bLive = h.online && b.state === "running" ? 1 : 0;
+      return aLive - bLive || a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+    if (!list.length) {
+      box.append(el("div", { class: "py-2 text-[12px] text-slate-400" }, ["No containers."]));
+      return box;
+    }
+    const removable = list.filter((c) => !(h.online && c.state === "running"));
+    if (removable.length > 1) {
+      const bulkLabel = h.online ? "Delete all exited (" + removable.length + ")" : "Delete all (" + removable.length + ")";
+      const summaryLabel = h.online ? removable.length + " exited containers" : removable.length + " inactive containers";
+      const pruneBtn = el("button", { type: "button", class: btnDanger }, [bulkLabel]);
+      pruneBtn.addEventListener("click", () => removeExitedContainers(h, removable.length));
+      box.append(el("div", { class: "flex items-center justify-between gap-2 border-b border-ink-line pb-2 mb-1" }, [
+        el("span", { class: "text-[12px] text-slate-400" }, [summaryLabel]),
+        pruneBtn,
+      ]));
+    }
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i];
+      const isLive = h.online && c.state === "running";
+      const stateLabel = isLive ? "running" : (c.state === "running" ? "offline" : (c.state || "exited"));
+      const badge = isLive
+        ? statusPill("bg-status-on", "text-status-on", "running")
+        : statusPill("bg-status-off", "text-slate-500", stateLabel);
+      const infoParts = [];
+      if (c.image) infoParts.push(c.image);
+      if (c.last_seen_at) infoParts.push("seen " + ago(c.last_seen_at));
+      const right = [badge];
+      if (!isLive) {
+        const del = el("button", { type: "button", class: btnDanger }, ["Delete"]);
+        del.addEventListener("click", () => removeContainer(h, c));
+        right.push(del);
+      }
+      box.append(el("div", {
+        class: "flex flex-wrap items-center gap-3 py-2" + (i < list.length - 1 ? " border-b border-ink-line" : ""),
+      }, [
+        el("div", { class: "min-w-0 flex-1" }, [
+          el("div", { class: "truncate font-mono text-[12px] text-slate-200" }, [c.name]),
+          el("div", { class: "mt-0.5 truncate font-mono text-[11px] text-slate-500" }, [infoParts.join(" · ")]),
+        ]),
+        el("div", { class: "flex shrink-0 items-center gap-2" }, right),
+      ]));
+    }
+    return box;
   }
 
   function paintGroups() {
@@ -914,6 +1204,30 @@ function initAdmin() {
     }
   }
 
+  async function removeContainer(h, c) {
+    if (!confirm("Delete container " + c.name + " and its stored logs?")) return;
+    try {
+      await api("/api/v1/admin/hosts/" + encodeURIComponent(h.id) + "/containers/" + encodeURIComponent(c.id), { method: "DELETE" });
+      await loadFleet(true);
+      toast("Container deleted");
+    } catch (err) {
+      toast(err.message);
+      await loadFleet(true);
+    }
+  }
+
+  async function removeExitedContainers(h, count) {
+    if (!confirm("Delete " + count + " exited containers on " + hostLabel(h) + " and their stored logs?")) return;
+    try {
+      await api("/api/v1/admin/hosts/" + encodeURIComponent(h.id) + "/containers?state=exited", { method: "DELETE" });
+      await loadFleet(true);
+      toast("Exited containers deleted");
+    } catch (err) {
+      toast(err.message);
+      await loadFleet(true);
+    }
+  }
+
   async function renameGroup(g, name) {
     try {
       await saveChange("/api/v1/admin/groups/" + encodeURIComponent(g.id), { method: "PATCH", body: JSON.stringify({ name: name.trim() }) });
@@ -986,6 +1300,11 @@ function initAdmin() {
   }
 
   function paintPending(items) {
+    const badge = document.getElementById("pending-badge");
+    if (badge) {
+      badge.textContent = items.length ? String(items.length) : "";
+      badge.hidden = !items.length;
+    }
     const list = document.getElementById("pending-hosts");
     if (!list) return;
     list.replaceChildren();
@@ -1081,10 +1400,6 @@ function initAdmin() {
 }
 
 function initAccount() {
-  document.getElementById("logout").addEventListener("click", async () => {
-    try { await api("/api/v1/logout", { method: "POST", body: "{}" }); } catch (e) { /* redirect anyway */ }
-    location.href = "/login";
-  });
   api("/api/v1/me").then((me) => {
     const summary = document.getElementById("account-summary");
     if (summary && me) summary.textContent = me.username + " · " + (me.role === "admin" ? "Admin" : "User");
@@ -1121,10 +1436,6 @@ function initAccounts() {
   let me = null;
   let groups = [];
 
-  document.getElementById("logout").addEventListener("click", async () => {
-    try { await api("/api/v1/logout", { method: "POST", body: "{}" }); } catch (e) { /* redirect anyway */ }
-    location.href = "/login";
-  });
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const username = document.getElementById("new-username").value;
@@ -1312,20 +1623,14 @@ function toast(message) {
   const body = document.getElementById("toast-body");
   if (!node || !body) return;
   body.textContent = message;
-  if (typeof bootstrap !== "undefined" && bootstrap.Toast) {
-    bootstrap.Toast.getOrCreateInstance(node, { delay: 2400 }).show();
-    return;
-  }
   node.hidden = false;
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => { node.hidden = true; }, 2400);
 }
 
 function showAdminLinks() {
-  for (const id of ["admin-link", "settings-link"]) {
-    const node = document.getElementById(id);
-    if (node) node.hidden = false;
-  }
+  const node = document.getElementById("admin-link");
+  if (node) node.hidden = false;
 }
 
 function chooseDuration(select, ms) {
@@ -1391,6 +1696,45 @@ function iconChevron() {
   const path = document.createElementNS(ns, "path");
   path.setAttribute("d", "M6 3.5 10.5 8 6 12.5");
   svg.append(path);
+  return svg;
+}
+
+function iconClose() {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.75");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("class", "h-3 w-3");
+  const path = document.createElementNS(ns, "path");
+  path.setAttribute("d", "M4.5 4.5 11.5 11.5M11.5 4.5 4.5 11.5");
+  svg.append(path);
+  return svg;
+}
+
+function iconCopy() {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.4");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("class", "h-3 w-3");
+  const rect = document.createElementNS(ns, "rect");
+  rect.setAttribute("x", "5.5");
+  rect.setAttribute("y", "5.5");
+  rect.setAttribute("width", "7.5");
+  rect.setAttribute("height", "7.5");
+  rect.setAttribute("rx", "1");
+  const path = document.createElementNS(ns, "path");
+  path.setAttribute("d", "M3.5 10.5H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h6.5a1 1 0 0 1 1 1v.5");
+  svg.append(rect, path);
   return svg;
 }
 

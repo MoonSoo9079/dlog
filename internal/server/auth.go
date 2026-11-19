@@ -75,7 +75,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		_ = s.store.DeleteSession(c.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.cookieSecure(r)})
 	if strings.Contains(r.Header.Get("Content-Type"), "application/json") || strings.Contains(r.Header.Get("Accept"), "application/json") {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -114,7 +114,8 @@ func (s *Server) principal(w http.ResponseWriter, r *http.Request) (Account, boo
 	if err != nil || c.Value == "" {
 		return Account{}, false
 	}
-	acct, ok, err := s.store.TouchSession(c.Value, s.sessionLength())
+	ttl := s.sessionLength()
+	acct, ok, renewed, err := s.store.touchSession(c.Value, ttl)
 	if err != nil {
 		slog.Error("session", "err", err)
 		return Account{}, false
@@ -122,7 +123,9 @@ func (s *Server) principal(w http.ResponseWriter, r *http.Request) (Account, boo
 	if !ok {
 		return Account{}, false
 	}
-	s.setSessionCookie(w, r, c.Value, time.Now().Add(s.sessionLength()))
+	if renewed {
+		s.setSessionCookie(w, r, c.Value, time.Now().Add(ttl))
+	}
 	return acct, true
 }
 
@@ -139,8 +142,11 @@ func (s *Server) hostFromRequest(w http.ResponseWriter, r *http.Request) (Host, 
 	return host, true
 }
 
+func (s *Server) cookieSecure(r *http.Request) bool {
+	return s.secureCookie || r.TLS != nil || (s.trustProxy && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"))
+}
+
 func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request, value string, exp time.Time) {
-	secure := s.secureCookie || r.TLS != nil || (s.trustProxy && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"))
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    value,
@@ -148,7 +154,7 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request, value 
 		Expires:  exp,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   secure,
+		Secure:   s.cookieSecure(r),
 	})
 }
 
@@ -182,14 +188,22 @@ func readLogin(w http.ResponseWriter, r *http.Request) (string, string, bool, er
 }
 
 type slidingLimit struct {
-	mu   sync.Mutex
-	hits map[string][]time.Time
+	mu        sync.Mutex
+	hits      map[string][]time.Time
+	lastSweep time.Time
 }
 
 func (l *slidingLimit) blocked(key string, limit int, window time.Duration) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.prune(key, window)
+	now := time.Now()
+	l.pruneKey(key, now, window)
+	if len(l.hits) > 256 && now.Sub(l.lastSweep) >= window {
+		for k := range l.hits {
+			l.pruneKey(k, now, window)
+		}
+		l.lastSweep = now
+	}
 	return len(l.hits[key]) >= limit
 }
 
@@ -202,18 +216,23 @@ func (l *slidingLimit) hit(key string) {
 	l.hits[key] = append(l.hits[key], time.Now())
 }
 
-func (l *slidingLimit) prune(key string, window time.Duration) {
+func (l *slidingLimit) pruneKey(key string, now time.Time, window time.Duration) {
 	if l.hits == nil {
-		l.hits = map[string][]time.Time{}
 		return
 	}
-	now := time.Now()
-	old := l.hits[key]
+	old, ok := l.hits[key]
+	if !ok {
+		return
+	}
 	kept := old[:0]
 	for _, t := range old {
 		if now.Sub(t) < window {
 			kept = append(kept, t)
 		}
+	}
+	if len(kept) == 0 {
+		delete(l.hits, key)
+		return
 	}
 	l.hits[key] = kept
 }
