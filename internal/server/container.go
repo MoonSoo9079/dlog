@@ -205,6 +205,41 @@ func (s *Store) DeleteExitedContainers(hostID string) (int64, error) {
 	return deleted, nil
 }
 
+// PurgeExitedContainers deletes exited containers that have not been seen since before, along with their logs.
+func (s *Store) PurgeExitedContainers(before time.Time) (int64, error) {
+	rows, err := s.db.Query(`SELECT host_id, container_id FROM containers WHERE state<>'running' AND last_seen_at<?`, before.UnixMilli())
+	if err != nil {
+		return 0, err
+	}
+	type pair struct{ hostID, containerID string }
+	var targets []pair
+	for rows.Next() {
+		var p pair
+		if err := rows.Scan(&p.hostID, &p.containerID); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		targets = append(targets, p)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+
+	var deleted int64
+	for _, p := range targets {
+		if err := s.DeleteContainer(p.hostID, p.containerID); err != nil {
+			if errors.Is(err, ErrNotFound) || errors.Is(err, ErrContainerRunning) {
+				continue
+			}
+			return deleted, err
+		}
+		deleted++
+	}
+	return deleted, nil
+}
+
 func clipLabels(in map[string]string) map[string]string {
 	out := make(map[string]string, len(in))
 	n := 0

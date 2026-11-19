@@ -75,6 +75,8 @@ type RegisterResponse struct {
 
 type LogLine struct {
 	ID            int64     `json:"id"`
+	HostID        string    `json:"host_id,omitempty"`
+	HostName      string    `json:"host_name,omitempty"`
 	ContainerID   string    `json:"container_id"`
 	ContainerName string    `json:"container_name"`
 	Image         string    `json:"image"`

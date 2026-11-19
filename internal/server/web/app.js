@@ -47,6 +47,9 @@ function initApp() {
   const hostQEl = document.getElementById("host-q");
   const hostsToggle = document.getElementById("hosts-toggle");
   const chipsEl = document.getElementById("chips");
+  const containerInfoBtn = document.getElementById("container-info-btn");
+  const containerInfoEl = document.getElementById("container-info");
+  const colTargetEl = document.getElementById("col-target");
   const logEl = document.getElementById("log");
   // Rows live in #log. The parent scroller keeps the column header sticky
   // and the same width as the rows, scrollbar included.
@@ -56,64 +59,174 @@ function initApp() {
   const emptyHint = emptyEl ? emptyEl.querySelector("[data-empty-hint]") : null;
   const metaEl = document.getElementById("logmeta");
   const qInput = document.getElementById("q");
+  const excludeInput = document.getElementById("exclude");
+  const levelSel = document.getElementById("level");
   const streamSel = document.getElementById("stream");
+  const rangeSel = document.getElementById("range");
+  const sinceInput = document.getElementById("since");
   const followBtn = document.getElementById("follow");
+  const fmtFormattedBtn = document.getElementById("fmt-formatted");
+  const fmtRawBtn = document.getElementById("fmt-raw");
+  const moreFiltersBtn = document.getElementById("more-filters-btn");
+  const moreFiltersEl = document.getElementById("more-filters");
+  const moreFiltersCount = document.getElementById("more-filters-count");
+  const clearFiltersBtn = document.getElementById("clear-filters");
+  const exportSel = document.getElementById("export-fmt");
   const resetFiltersBtn = document.getElementById("reset-filters");
   const jumpLatestBtn = document.getElementById("jump-latest");
   const jumpLatestLabel = document.getElementById("jump-latest-label");
+
+  const initParams = new URLSearchParams(location.search);
   let hosts = [];
   let groups = [];
   let collapsed = loadCollapsed();
   let containers = [];
   let lines = [];
+  // scopeKind is "", "host", "all", or "group"
+  let scopeKind = "";
   let hostId = "";
+  let groupScopeId = "";
   let containerId = "";
-  let q = "";
-  let paintedQ = "";
-  let stream = "";
+  let infoOpen = false;
+  let q = (initParams.get("q") || "").trim();
+  let exclude = (initParams.get("exclude") || "").trim();
+  let level = (initParams.get("level") || "").trim().toLowerCase();
+  let stream = (initParams.get("stream") || "").trim();
+  let range = (initParams.get("range") || "").trim();
+  let sinceLocal = (initParams.get("since") || "").trim();
+  let initialTarget = {
+    host: (initParams.get("host") || "").trim(),
+    group: (initParams.get("group") || "").trim(),
+    container: (initParams.get("container") || "").trim(),
+  };
+  let formatLogs = true;
+  try {
+    if (localStorage.getItem("dlog.format-logs") === "raw") formatLogs = false;
+  } catch (e) {}
+  let paintedKey = "";
   let follow = true;
   let gen = 0;
   let ready = false;
-  let polling = false;
   let viewer = null;
   let unread = 0;
+  let streamES = null;
+
+  qInput.value = q;
+  if (excludeInput) excludeInput.value = exclude;
+  if (levelSel && ["", "error", "warn", "info", "debug"].includes(level)) levelSel.value = level;
+  else level = "";
+  if (["", "stdout", "stderr"].includes(stream)) streamSel.value = stream;
+  else stream = "";
+  if (["", "15m", "1h", "from"].includes(range)) rangeSel.value = range;
+  else range = "";
+  sinceInput.value = sinceLocal;
+  sinceInput.hidden = range !== "from";
+  let moreFiltersOpen = !!(exclude || level || stream);
+  function syncFormatSwitch() {
+    if (!fmtFormattedBtn || !fmtRawBtn) return;
+    fmtFormattedBtn.classList.toggle("is-active", formatLogs);
+    fmtFormattedBtn.setAttribute("aria-pressed", formatLogs ? "true" : "false");
+    fmtRawBtn.classList.toggle("is-active", !formatLogs);
+    fmtRawBtn.setAttribute("aria-pressed", formatLogs ? "false" : "true");
+  }
+  function setFormatMode(next) {
+    if (formatLogs === next) return;
+    formatLogs = next;
+    syncFormatSwitch();
+    try { localStorage.setItem("dlog.format-logs", formatLogs ? "formatted" : "raw"); } catch (e) {}
+    paintLines();
+  }
+  syncFormatSwitch();
+  if (fmtFormattedBtn) fmtFormattedBtn.addEventListener("click", () => setFormatMode(true));
+  if (fmtRawBtn) fmtRawBtn.addEventListener("click", () => setFormatMode(false));
+
+  function syncMoreFilters() {
+    const activeExtra = (exclude ? 1 : 0) + (level ? 1 : 0) + (stream ? 1 : 0);
+    if (moreFiltersEl) moreFiltersEl.hidden = !moreFiltersOpen;
+    if (moreFiltersBtn) {
+      moreFiltersBtn.setAttribute("aria-expanded", moreFiltersOpen ? "true" : "false");
+      moreFiltersBtn.classList.toggle("has-filters", activeExtra > 0);
+    }
+    if (moreFiltersCount) {
+      moreFiltersCount.textContent = activeExtra ? String(activeExtra) : "";
+      moreFiltersCount.hidden = activeExtra === 0;
+    }
+    if (clearFiltersBtn) clearFiltersBtn.hidden = !hasActiveFilters();
+  }
+  if (moreFiltersBtn) {
+    moreFiltersBtn.addEventListener("click", () => {
+      moreFiltersOpen = !moreFiltersOpen;
+      syncMoreFilters();
+    });
+  }
+  syncMoreFilters();
 
   followBtn.addEventListener("click", () => {
     follow = !follow;
     followBtn.classList.toggle("is-on", follow);
     followBtn.setAttribute("aria-pressed", follow ? "true" : "false");
+    if (follow) connectStream();
+    else closeStream();
   });
   document.getElementById("older").addEventListener("click", loadOlder);
-  streamSel.addEventListener("change", () => { stream = streamSel.value; reload(); });
-  const rangeSel = document.getElementById("range");
-  const sinceInput = document.getElementById("since");
-  let range = "";
-  let sinceLocal = "";
+  streamSel.addEventListener("change", () => { stream = streamSel.value; syncMoreFilters(); syncURL(); reload(); });
+  if (levelSel) {
+    levelSel.addEventListener("change", () => { level = levelSel.value; syncMoreFilters(); syncURL(); reload(); });
+  }
   rangeSel.addEventListener("change", () => {
     range = rangeSel.value;
     sinceInput.hidden = range !== "from";
+    syncMoreFilters();
+    syncURL();
     reload();
   });
   sinceInput.addEventListener("change", () => {
     sinceLocal = sinceInput.value;
+    syncURL();
     if (range === "from") reload();
   });
-  if (resetFiltersBtn) {
-    resetFiltersBtn.addEventListener("click", () => {
-      containerId = "";
-      q = "";
-      stream = "";
-      range = "";
-      sinceLocal = "";
-      qInput.value = "";
-      streamSel.value = "";
-      rangeSel.value = "";
-      sinceInput.value = "";
-      sinceInput.hidden = true;
-      paintChips();
-      reload();
+  if (exportSel) {
+    exportSel.addEventListener("change", () => {
+      const fmt = exportSel.value;
+      exportSel.value = "";
+      if (!fmt || !hasScope()) return;
+      const url = logEndpoint("/api/v1/logs/export", { format: fmt });
+      const link = el("a", { href: url, download: "" });
+      document.body.append(link);
+      link.click();
+      link.remove();
     });
   }
+  if (containerInfoBtn) {
+    containerInfoBtn.addEventListener("click", () => {
+      infoOpen = !infoOpen;
+      paintContainerInfo();
+    });
+  }
+  function resetAllFilters() {
+    containerId = "";
+    infoOpen = false;
+    q = "";
+    exclude = "";
+    level = "";
+    stream = "";
+    range = "";
+    sinceLocal = "";
+    qInput.value = "";
+    if (excludeInput) excludeInput.value = "";
+    if (levelSel) levelSel.value = "";
+    streamSel.value = "";
+    rangeSel.value = "";
+    sinceInput.value = "";
+    sinceInput.hidden = true;
+    syncMoreFilters();
+    syncURL();
+    paintChips();
+    paintContainerInfo();
+    reload();
+  }
+  if (resetFiltersBtn) resetFiltersBtn.addEventListener("click", resetAllFilters);
+  if (clearFiltersBtn) clearFiltersBtn.addEventListener("click", resetAllFilters);
   if (jumpLatestBtn) {
     jumpLatestBtn.addEventListener("click", () => {
       pinBottom();
@@ -135,6 +248,8 @@ function initApp() {
       const next = qInput.value.trim();
       if (next === q) return;
       q = next;
+      syncMoreFilters();
+      syncURL();
       reload();
     }, 250);
   });
@@ -145,6 +260,8 @@ function initApp() {
         qInput.value = "";
         if (q) {
           q = "";
+          syncMoreFilters();
+          syncURL();
           reload();
         }
       } else {
@@ -152,6 +269,36 @@ function initApp() {
       }
     }
   });
+  if (excludeInput) {
+    let exTimer = 0;
+    excludeInput.addEventListener("input", () => {
+      clearTimeout(exTimer);
+      exTimer = setTimeout(() => {
+        const next = excludeInput.value.trim();
+        if (next === exclude) return;
+        exclude = next;
+        syncMoreFilters();
+        syncURL();
+        reload();
+      }, 250);
+    });
+    excludeInput.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        if (excludeInput.value) {
+          clearTimeout(exTimer);
+          excludeInput.value = "";
+          if (exclude) {
+            exclude = "";
+            syncMoreFilters();
+            syncURL();
+            reload();
+          }
+        } else {
+          excludeInput.blur();
+        }
+      }
+    });
+  }
   hostQEl.addEventListener("input", () => paintHosts());
   if (hostsToggle) {
     const hostsPaneKey = "dlog.hosts-pane";
@@ -176,6 +323,13 @@ function initApp() {
       qInput.focus();
     }
   });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) closeStream();
+    else {
+      refreshHosts();
+      if (follow && ready && hasScope()) connectStream();
+    }
+  });
 
   refreshHosts();
   api("/api/v1/meta").then((m) => {
@@ -183,7 +337,6 @@ function initApp() {
     version.textContent = m.version ? "v" + m.version : "";
   }).catch(() => {});
   setInterval(() => { if (!document.hidden) refreshHosts(); }, 5000);
-  setInterval(() => { if (!document.hidden) pollLogs(); }, 1000);
   api("/api/v1/me").then((me) => {
     viewer = me;
     if (me && me.role === "admin") showAdminLinks();
@@ -191,23 +344,85 @@ function initApp() {
     paintChips();
   }).catch(() => {});
 
+  function hasScope() {
+    return scopeKind === "all" || (scopeKind === "host" && !!hostId) || (scopeKind === "group" && !!groupScopeId);
+  }
+
+  function isMultiHost() {
+    return scopeKind === "all" || scopeKind === "group";
+  }
+
+  function syncURL() {
+    const p = new URLSearchParams();
+    if (scopeKind === "all") p.set("host", "all");
+    else if (scopeKind === "group" && groupScopeId) p.set("group", groupScopeId);
+    else if (scopeKind === "host" && hostId) {
+      p.set("host", hostId);
+      if (containerId) p.set("container", containerId);
+    }
+    if (q) p.set("q", q);
+    if (exclude) p.set("exclude", exclude);
+    if (level) p.set("level", level);
+    if (stream) p.set("stream", stream);
+    if (range) p.set("range", range);
+    if (range === "from" && sinceLocal) p.set("since", sinceLocal);
+    const qs = p.toString();
+    const next = location.pathname + (qs ? "?" + qs : "");
+    if (next !== location.pathname + location.search) {
+      try { history.replaceState(null, "", next); } catch (e) {}
+    }
+  }
+
   async function refreshHosts() {
     try {
       const data = await api("/api/v1/hosts");
       hosts = data.hosts || [];
       groups = (data.groups || []).slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id));
-      const prevHost = hostId;
-      if (hostId && !hosts.some((h) => h.id === hostId)) {
+      const prevSig = scopeKind + ":" + hostId + ":" + groupScopeId;
+
+      if (initialTarget) {
+        const tgt = initialTarget;
+        initialTarget = null;
+        if (tgt.host === "all" && hosts.length) {
+          scopeKind = "all";
+        } else if (tgt.group && (tgt.group === "ungrouped" || groups.some((g) => g.id === tgt.group))) {
+          scopeKind = "group";
+          groupScopeId = tgt.group;
+        } else if (tgt.host && hosts.some((h) => h.id === tgt.host)) {
+          scopeKind = "host";
+          hostId = tgt.host;
+          containerId = tgt.container;
+        }
+      }
+
+      if (scopeKind === "host" && !hosts.some((h) => h.id === hostId)) {
+        scopeKind = "";
         hostId = "";
         containerId = "";
       }
-      if (!hostId && hosts.length) {
+      if (scopeKind === "group" && groupScopeId !== "ungrouped" && !groups.some((g) => g.id === groupScopeId)) {
+        scopeKind = "";
+        groupScopeId = "";
+      }
+      if (scopeKind === "all" && !hosts.length) {
+        scopeKind = "";
+      }
+      if (!scopeKind && hosts.length) {
+        scopeKind = "host";
         hostId = hosts[0].id;
         containerId = "";
       }
+
+      const nextSig = scopeKind + ":" + hostId + ":" + groupScopeId;
       paintHosts();
-      if (hostId !== prevHost || (hostId && !ready)) reload();
-      if (hostId) refreshContainers();
+      if (colTargetEl) colTargetEl.textContent = isMultiHost() ? "Host / Container" : "Container";
+      if (nextSig !== prevSig || (hasScope() && !ready)) {
+        syncURL();
+        paintChips();
+        paintContainerInfo();
+        reload();
+      }
+      if (scopeKind === "host" && hostId) refreshContainers();
     } catch (e) {
       if (e.message !== "unauthorized") toast(e.message);
     }
@@ -217,13 +432,16 @@ function initApp() {
     const myHost = hostId;
     try {
       const data = await api("/api/v1/containers?host_id=" + encodeURIComponent(myHost));
-      if (myHost !== hostId) return;
+      if (scopeKind !== "host" || myHost !== hostId) return;
       containers = data.containers || [];
       if (containerId && !containers.some((c) => c.id === containerId)) {
         containerId = "";
+        infoOpen = false;
+        syncURL();
         reload();
       }
       paintChips();
+      paintContainerInfo();
     } catch (e) {
       if (e.message !== "unauthorized") toast(e.message);
     }
@@ -236,6 +454,21 @@ function initApp() {
     else hostCountEl.textContent = hosts.length ? String(hosts.length) : "";
 
     hostsEl.replaceChildren();
+    if (hosts.length && !query) {
+      const online = hosts.filter((h) => h.status === "enabled" && h.online).length;
+      const active = scopeKind === "all";
+      const allCls = active
+        ? "flex w-full cursor-pointer items-center justify-between gap-2 border-b border-ink-line border-l-2 border-l-amber-500 bg-amber-500/[0.08] px-4 py-2.5 text-left transition-colors duration-150 ease-in-out"
+        : "flex w-full cursor-pointer items-center justify-between gap-2 border-b border-ink-line border-l-2 border-l-transparent px-4 py-2.5 text-left transition-colors duration-150 ease-in-out hover:bg-white/[0.03]";
+      hostsEl.append(el("button", {
+        type: "button",
+        class: allCls,
+        onclick: () => selectAllHosts(),
+      }, [
+        el("span", { class: "text-[13px] font-medium text-slate-200" }, ["All hosts"]),
+        el("span", { class: "font-mono text-[11px] tabular-nums text-slate-400" }, [online + " / " + hosts.length + " online"]),
+      ]));
+    }
     const buckets = new Map();
     for (const g of groups) buckets.set(g.id, []);
     const ungrouped = [];
@@ -296,23 +529,33 @@ function initApp() {
   }
 
   function groupLabel(name, count, loose, key, open) {
-    return el("button", {
+    const active = scopeKind === "group" && groupScopeId === key;
+    const toggleBtn = el("button", {
       type: "button",
-      class: "host-group flex w-full cursor-pointer items-center justify-between gap-3 px-4 pb-1 pt-5 text-left text-slate-400 transition-colors duration-150 ease-in-out hover:text-slate-200" + (loose ? " is-loose" : "") + (open ? "" : " is-collapsed"),
+      class: "host-group flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left text-slate-400 transition-colors duration-150 ease-in-out hover:text-slate-200" + (loose ? " is-loose" : "") + (open ? "" : " is-collapsed"),
       "aria-expanded": open ? "true" : "false",
       onclick: () => toggleGroup(key),
     }, [
-      el("span", { class: "flex min-w-0 items-center gap-2" }, [
-        iconChevron(),
-        el("span", { class: "label truncate text-[11px] font-medium uppercase tracking-[0.14em]" }, [name]),
-      ]),
+      iconChevron(),
+      el("span", { class: "label truncate text-[11px] font-medium uppercase tracking-[0.14em]" }, [name]),
+    ]);
+    const scopeBtn = el("button", {
+      type: "button",
+      class: "group-scope-btn shrink-0 cursor-pointer rounded border px-1.5 py-0.5 font-mono text-[10px] " + (active ? "is-active border-amber-500/70 bg-amber-500/15 text-amber-300" : "border-ink-edge bg-ink-field text-slate-400 hover:border-slate-500 hover:text-slate-200"),
+      title: active ? "Reset group filter (show all hosts)" : "View logs across " + name,
+      onclick: () => selectGroup(key),
+    }, [active ? "logs ×" : "logs"]);
+    return el("div", { class: "group-row-head flex items-center justify-between gap-2 px-4 pb-1 pt-5" }, [
+      toggleBtn,
+      scopeBtn,
       el("span", { class: "count font-mono text-[11px] tabular-nums text-slate-500" }, [String(count)]),
     ]);
   }
 
   function hostButton(h) {
     const dotClass = h.status !== "enabled" ? "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-status-down" : (h.online ? "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-status-on" : "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-status-off");
-    const rowClass = h.id === hostId
+    const selected = scopeKind === "host" && h.id === hostId;
+    const rowClass = selected
       ? "flex w-full cursor-pointer items-start gap-3 border-l-2 border-amber-500 bg-amber-500/[0.08] px-4 py-2.5 text-left transition-colors duration-150 ease-in-out"
       : "flex w-full cursor-pointer items-start gap-3 border-l-2 border-transparent px-4 py-2.5 text-left transition-colors duration-150 ease-in-out hover:bg-white/[0.03]";
     return el("button", {
@@ -330,16 +573,77 @@ function initApp() {
   }
 
   function selectHost(id) {
-    if (id === hostId) return;
+    if (scopeKind === "host" && id === hostId) return;
+    scopeKind = "host";
     hostId = id;
+    groupScopeId = "";
     containerId = "";
+    infoOpen = false;
+    if (colTargetEl) colTargetEl.textContent = "Container";
+    syncURL();
     paintHosts();
+    paintContainerInfo();
     refreshContainers();
+    reload();
+  }
+
+  function selectAllHosts() {
+    if (scopeKind === "all") return;
+    scopeKind = "all";
+    hostId = "";
+    groupScopeId = "";
+    containerId = "";
+    containers = [];
+    infoOpen = false;
+    if (colTargetEl) colTargetEl.textContent = "Host / Container";
+    syncURL();
+    paintHosts();
+    paintChips();
+    paintContainerInfo();
+    reload();
+  }
+
+  function selectGroup(gid) {
+    if (scopeKind === "group" && groupScopeId === gid) {
+      selectAllHosts();
+      return;
+    }
+    scopeKind = "group";
+    hostId = "";
+    groupScopeId = gid;
+    containerId = "";
+    containers = [];
+    infoOpen = false;
+    if (colTargetEl) colTargetEl.textContent = "Host / Container";
+    syncMoreFilters();
+    syncURL();
+    paintHosts();
+    paintChips();
+    paintContainerInfo();
     reload();
   }
 
   function paintChips() {
     chipsEl.replaceChildren();
+    if (scopeKind === "all") {
+      chipsEl.append(el("span", { class: "inline-flex h-8 items-center rounded-md border border-amber-500/40 bg-amber-500/10 px-3 text-[12px] font-medium text-amber-300" }, ["All hosts"]));
+      return;
+    }
+    if (scopeKind === "group") {
+      const g = groups.find((item) => item.id === groupScopeId);
+      const name = groupScopeId === "ungrouped" ? "Ungrouped" : (g ? g.name : "Group");
+      chipsEl.append(el("span", { class: "inline-flex h-8 shrink-0 items-stretch overflow-hidden rounded-md border border-amber-500/50 bg-amber-500/10 text-amber-300" }, [
+        el("span", { class: "inline-flex items-center px-3 text-[12px] font-medium" }, ["Group: " + name]),
+        el("button", {
+          type: "button",
+          class: "inline-flex w-7 cursor-pointer items-center justify-center border-l border-amber-500/35 text-amber-300 transition-colors duration-150 ease-in-out hover:bg-amber-500/20 hover:text-amber-100",
+          title: "Reset group filter (show all hosts)",
+          "aria-label": "Reset group filter",
+          onclick: () => selectAllHosts(),
+        }, [iconClose()]),
+      ]));
+      return;
+    }
     if (!hostId) return;
     const isAdmin = !!(viewer && viewer.role === "admin");
     const activeHost = hosts.find((h) => h.id === hostId);
@@ -353,6 +657,54 @@ function initApp() {
     }
   }
 
+  function paintContainerInfo() {
+    if (!containerInfoBtn || !containerInfoEl) return;
+    const c = scopeKind === "host" && containerId ? containers.find((item) => item.id === containerId) : null;
+    if (!c) {
+      containerInfoBtn.hidden = true;
+      containerInfoEl.hidden = true;
+      containerInfoEl.replaceChildren();
+      return;
+    }
+    containerInfoBtn.hidden = false;
+    containerInfoBtn.setAttribute("aria-expanded", infoOpen ? "true" : "false");
+    containerInfoBtn.classList.toggle("border-amber-500/60", infoOpen);
+    containerInfoBtn.classList.toggle("text-amber-300", infoOpen);
+    containerInfoEl.hidden = !infoOpen;
+    if (!infoOpen) return;
+
+    const activeHost = hosts.find((h) => h.id === hostId);
+    const isLive = !!(activeHost && activeHost.online && c.state === "running");
+    const stateLabel = isLive ? "running" : (c.state === "running" ? "offline" : (c.state || "exited"));
+    const shortId = c.id.length > 12 ? c.id.slice(0, 12) : c.id;
+    const idBtn = el("button", {
+      type: "button",
+      class: "cursor-pointer font-mono text-slate-200 underline decoration-ink-edge underline-offset-2 hover:text-amber-300",
+      title: "Click to copy full container ID: " + c.id,
+      onclick: () => copyText(c.id, "Container ID copied"),
+    }, [shortId]);
+
+    const metaRow = el("div", { class: "flex flex-wrap items-center gap-x-5 gap-y-1.5" }, [
+      el("span", {}, [el("span", { class: "text-slate-500" }, ["Image: "]), el("span", { class: "font-mono text-slate-200" }, [c.image || "—"])]),
+      el("span", {}, [el("span", { class: "text-slate-500" }, ["ID: "]), idBtn]),
+      el("span", {}, [el("span", { class: "text-slate-500" }, ["State: "]), el("span", { class: "font-mono text-slate-200" }, [stateLabel])]),
+      el("span", {}, [el("span", { class: "text-slate-500" }, ["Seen: "]), el("span", { class: "font-mono text-slate-200", title: fullTime(c.last_seen_at) }, [ago(c.last_seen_at)])]),
+    ]);
+
+    const labelEntries = Object.entries(c.labels || {}).sort((a, b) => a[0].localeCompare(b[0]));
+    containerInfoEl.replaceChildren(metaRow);
+    if (labelEntries.length) {
+      const wrap = el("div", { class: "mt-2 flex flex-wrap items-center gap-1.5 border-t border-ink-line pt-2" });
+      for (const [k, v] of labelEntries) {
+        wrap.append(el("span", {
+          class: "max-w-full truncate rounded border border-ink-edge bg-ink-chrome px-2 py-0.5 font-mono text-[11px] text-slate-300",
+          title: k + "=" + v,
+        }, [k + "=" + v]));
+      }
+      containerInfoEl.append(wrap);
+    }
+  }
+
   function chip(c, label, selected, exited, deletable) {
     const id = c ? c.id : "";
     const tone = selected
@@ -361,7 +713,11 @@ function initApp() {
     const select = () => {
       if (containerId === id) return;
       containerId = id;
+      if (!containerId) infoOpen = false;
+      syncMoreFilters();
+      syncURL();
       paintChips();
+      paintContainerInfo();
       reload();
     };
     if (!deletable) {
@@ -399,25 +755,82 @@ function initApp() {
     const myHost = hostId;
     try {
       await api("/api/v1/admin/hosts/" + encodeURIComponent(myHost) + "/containers/" + encodeURIComponent(c.id), { method: "DELETE" });
-      if (myHost === hostId) {
+      if (scopeKind === "host" && myHost === hostId) {
         containers = containers.filter((item) => item.id !== c.id);
-        if (containerId === c.id) containerId = "";
+        if (containerId === c.id) {
+          containerId = "";
+          infoOpen = false;
+          syncURL();
+        }
         paintChips();
+        paintContainerInfo();
         reload();
       }
       refreshHosts();
       toast("Container deleted");
     } catch (err) {
       toast(err.message);
-      if (myHost === hostId) refreshContainers();
+      if (scopeKind === "host" && myHost === hostId) refreshContainers();
     }
+  }
+
+  function closeStream() {
+    if (streamES) {
+      streamES.close();
+      streamES = null;
+    }
+    followBtn.classList.remove("is-live");
+  }
+
+  function connectStream() {
+    closeStream();
+    if (!follow || !ready || document.hidden || !hasScope() || typeof EventSource === "undefined") return;
+    const my = gen;
+    const after = lines.length ? lines[lines.length - 1].id : 0;
+    const url = logEndpoint("/api/v1/logs/stream", { after_id: String(after) });
+    const es = new EventSource(url);
+    streamES = es;
+    es.onopen = () => {
+      if (my !== gen || streamES !== es) return;
+      followBtn.classList.add("is-live");
+    };
+    es.addEventListener("lines", (ev) => {
+      if (my !== gen || streamES !== es) return;
+      let batch;
+      try { batch = JSON.parse(ev.data); } catch (e) { return; }
+      if (!Array.isArray(batch) || !batch.length) return;
+      const lastId = lines.length ? lines[lines.length - 1].id : 0;
+      const fresh = batch.filter((ln) => ln.id > lastId);
+      if (!fresh.length) return;
+      const stick = nearBottom() && !selectingLog();
+      const multi = isMultiHost();
+      for (const ln of fresh) {
+        lines.push(ln);
+        logEl.append(lineNode(ln, q, formatLogs, multi));
+      }
+      if (!stick) unread += fresh.length;
+      if (lines.length > 3000) {
+        lines = lines.slice(lines.length - 3000);
+        paintLines({ stick });
+      } else {
+        const label = lineLabel(lines.length);
+        if (metaEl.textContent !== label) metaEl.textContent = label;
+        paintEmpty();
+        if (stick) pinBottom();
+        syncJumpButton();
+      }
+    });
+    es.onerror = () => {
+      if (streamES === es) followBtn.classList.remove("is-live");
+    };
   }
 
   async function reload() {
     const my = ++gen;
     ready = false;
     unread = 0;
-    if (!hostId) {
+    closeStream();
+    if (!hasScope()) {
       lines = [];
       paintLines();
       ready = true;
@@ -431,47 +844,15 @@ function initApp() {
       lines = data.lines || [];
       paintLines({ stick: follow && nearBottom() && !selectingLog() });
       ready = true;
+      if (follow) connectStream();
     } catch (e) {
       if (my === gen && e.message !== "unauthorized") toast(e.message);
       if (my === gen) ready = true;
     }
   }
 
-  async function pollLogs() {
-    if (polling || !follow || !hostId || !ready) return;
-    polling = true;
-    const my = gen;
-    const after = lines.length ? lines[lines.length - 1].id : 0;
-    try {
-      const data = await api(logURL({ after_id: String(after) }));
-      if (my !== gen || !data) return;
-      if (!data.lines || !data.lines.length) return;
-      // A selection inside the pane keeps its place while new lines arrive.
-      const stick = nearBottom() && !selectingLog();
-      for (const ln of data.lines) {
-        lines.push(ln);
-        logEl.append(lineNode(ln, q));
-      }
-      if (!stick) unread += data.lines.length;
-      if (lines.length > 3000) {
-        lines = lines.slice(lines.length - 3000);
-        paintLines({ stick });
-      } else {
-        const label = lineLabel(lines.length);
-        if (metaEl.textContent !== label) metaEl.textContent = label;
-        paintEmpty();
-        if (stick) pinBottom();
-        syncJumpButton();
-      }
-    } catch (e) {
-      if (e.message !== "unauthorized") toast(e.message);
-    } finally {
-      polling = false;
-    }
-  }
-
   async function loadOlder() {
-    if (!hostId || !lines.length) { toast("No older lines"); return; }
+    if (!hasScope() || !lines.length) { toast("No older lines"); return; }
     const my = gen;
     const prevHeight = view().scrollHeight;
     try {
@@ -527,16 +908,18 @@ function initApp() {
       want[i] = id;
       wantSet.add(id);
     }
-    const qChanged = q !== paintedQ;
-    const changed = qChanged || !sameLineIds(want);
+    const multi = isMultiHost();
+    const renderKey = q + "\x00" + (formatLogs ? "1" : "0") + "\x00" + (multi ? "m" : "s");
+    const styleChanged = renderKey !== paintedKey;
+    const changed = styleChanged || !sameLineIds(want);
     const node = view();
     const manageScroll = changed && !!(opts.stick || opts.anchorHeight != null);
     if (manageScroll) node.style.overflowAnchor = "none";
     if (changed) {
-      if (qChanged) {
+      if (styleChanged) {
         logEl.replaceChildren();
-        for (let i = 0; i < lines.length; i++) logEl.append(lineNode(lines[i], q));
-        paintedQ = q;
+        for (let i = 0; i < lines.length; i++) logEl.append(lineNode(lines[i], q, formatLogs, multi));
+        paintedKey = renderKey;
       } else {
         const stale = [];
         for (const node of logEl.children) {
@@ -554,7 +937,7 @@ function initApp() {
           for (let n = cursor; n; n = n.nextElementSibling) {
             if (n.getAttribute("data-id") === id) { found = n; break; }
           }
-          logEl.insertBefore(found || lineNode(lines[i], q), cursor);
+          logEl.insertBefore(found || lineNode(lines[i], q, formatLogs, multi), cursor);
         }
         while (cursor) {
           const next = cursor.nextElementSibling;
@@ -563,7 +946,7 @@ function initApp() {
         }
       }
     }
-    const label = hostId ? (lines.length ? lineLabel(lines.length) : "No lines") : "Select a host";
+    const label = hasScope() ? (lines.length ? lineLabel(lines.length) : "No lines") : "Select a host";
     if (metaEl.textContent !== label) metaEl.textContent = label;
     paintEmpty();
     if (opts.stick) {
@@ -578,7 +961,7 @@ function initApp() {
   }
 
   function hasActiveFilters() {
-    return !!(containerId || q || stream || range);
+    return !!(containerId || q || exclude || level || stream || range);
   }
 
   function paintEmpty() {
@@ -586,9 +969,9 @@ function initApp() {
     const show = lines.length === 0;
     emptyEl.hidden = !show;
     if (!show || !emptyTitle || !emptyHint) return;
-    if (hostId) {
+    if (hasScope()) {
       emptyTitle.textContent = "No lines in this view";
-      emptyHint.textContent = "The container, stream, and time filters all apply. Older loads the previous page.";
+      emptyHint.textContent = "The container, search, exclude, level, stream, and time filters all apply. Older loads the previous page.";
       if (resetFiltersBtn) resetFiltersBtn.hidden = !hasActiveFilters();
     } else {
       emptyTitle.textContent = "Select a host";
@@ -615,17 +998,27 @@ function initApp() {
     return "";
   }
 
-  function logURL(extra) {
+  function logEndpoint(base, extra) {
     const p = new URLSearchParams();
-    p.set("host_id", hostId);
-    if (containerId) p.set("container_id", containerId);
+    if (scopeKind === "host" && hostId) {
+      p.set("host_id", hostId);
+      if (containerId) p.set("container_id", containerId);
+    } else if (scopeKind === "group" && groupScopeId) {
+      p.set("group_id", groupScopeId);
+    }
     if (q) p.set("q", q);
+    if (exclude) p.set("exclude", exclude);
+    if (level) p.set("level", level);
     if (stream) p.set("stream", stream);
     const since = sinceBound();
     if (since) p.set("since", since);
-    p.set("limit", "300");
     if (extra) for (const [k, v] of Object.entries(extra)) p.set(k, v);
-    return "/api/v1/logs?" + p.toString();
+    const qs = p.toString();
+    return qs ? base + "?" + qs : base;
+  }
+
+  function logURL(extra) {
+    return logEndpoint("/api/v1/logs", { limit: "300", ...(extra || {}) });
   }
 
 }
@@ -687,16 +1080,157 @@ function highlightNodes(text, query) {
   return out;
 }
 
-function copyLogLine(ln) {
-  const text = (ln.timestamp || "") + " " + (ln.container_name || ln.container_id) + " " + ln.stream + " " + (ln.message || "");
+// Parse ANSI SGR escape sequences safely into DOM nodes, preserving search highlights.
+const ansiRE = /\x1b\[([0-9;]*)([A-Za-z])/g;
+
+function renderANSI(str, query) {
+  if (!str.includes("\x1b")) return highlightNodes(str, query);
+  const out = [];
+  const state = { bold: false, dim: false, italic: false, underline: false, fg: "", bg: "" };
+  let last = 0;
+  let match;
+  ansiRE.lastIndex = 0;
+  while ((match = ansiRE.exec(str)) !== null) {
+    if (match.index > last) {
+      appendStyled(out, str.slice(last, match.index), state, query);
+    }
+    last = ansiRE.lastIndex;
+    if (match[2] !== "m") continue;
+    const codes = match[1] ? match[1].split(";").map((n) => parseInt(n, 10) || 0) : [0];
+    for (let i = 0; i < codes.length; i++) {
+      const c = codes[i];
+      if (c === 0) {
+        state.bold = state.dim = state.italic = state.underline = false;
+        state.fg = state.bg = "";
+      } else if (c === 1) state.bold = true;
+      else if (c === 2) state.dim = true;
+      else if (c === 3) state.italic = true;
+      else if (c === 4) state.underline = true;
+      else if (c === 22) { state.bold = false; state.dim = false; }
+      else if (c === 23) state.italic = false;
+      else if (c === 24) state.underline = false;
+      else if (c === 39) state.fg = "";
+      else if (c === 49) state.bg = "";
+      else if ((c >= 30 && c <= 37) || (c >= 90 && c <= 97)) state.fg = "ansi-fg-" + c;
+      else if ((c >= 40 && c <= 47) || (c >= 100 && c <= 107)) state.bg = "ansi-bg-" + c;
+      else if ((c === 38 || c === 48) && codes[i + 1] === 5 && i + 2 < codes.length) {
+        i += 2; // Skip 256-color payload cleanly
+      } else if ((c === 38 || c === 48) && codes[i + 1] === 2 && i + 4 < codes.length) {
+        i += 4; // Skip truecolor payload cleanly
+      }
+    }
+  }
+  if (last < str.length) appendStyled(out, str.slice(last), state, query);
+  return out;
+}
+
+function appendStyled(out, chunk, state, query) {
+  const cls = [];
+  if (state.bold) cls.push("ansi-bold");
+  if (state.dim) cls.push("ansi-dim");
+  if (state.italic) cls.push("ansi-italic");
+  if (state.underline) cls.push("ansi-underline");
+  if (state.fg) cls.push(state.fg);
+  if (state.bg) cls.push(state.bg);
+  const children = highlightNodes(chunk, query);
+  if (!cls.length) {
+    for (const c of children) out.push(c);
+  } else {
+    out.push(el("span", { class: cls.join(" ") }, children));
+  }
+}
+
+function tryParseJSONObject(msg) {
+  const trimmed = String(msg || "").trim();
+  if (trimmed.length < 2 || trimmed[0] !== "{" || trimmed[trimmed.length - 1] !== "}") return null;
+  try {
+    const obj = JSON.parse(trimmed);
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) return obj;
+  } catch (e) {}
+  return null;
+}
+
+function normalizeLevel(raw) {
+  const s = String(raw || "").trim().toLowerCase();
+  if (!s) return "";
+  if (s === "err" || s === "error" || s === "fatal" || s === "panic" || s === "crit" || s === "critical" || s === "emerg") return "error";
+  if (s === "warn" || s === "warning") return "warn";
+  if (s === "info" || s === "notice") return "info";
+  if (s === "debug" || s === "trace") return "debug";
+  return "";
+}
+
+function detectTextLevel(msg) {
+  const clean = String(msg || "").replace(ansiRE, "");
+  const m = clean.match(/(?:^|[\s\[\(\{,])(?:level|lvl|severity)=["']?([a-zA-Z]+)["']?|(?:^|[\s\[\(])(FATAL|PANIC|ERROR|CRIT|WARN|WARNING|INFO|DEBUG|TRACE)(?:[\s\]\):,]|$)/);
+  if (!m) return "";
+  return normalizeLevel(m[1] || m[2]);
+}
+
+function renderMessageNodes(msg, query, formatted) {
+  const str = String(msg || "");
+  if (!formatted) return highlightNodes(str, query);
+  const jsonObj = tryParseJSONObject(str);
+  if (jsonObj) {
+    const lvl = normalizeLevel(jsonObj.level || jsonObj.lvl || jsonObj.severity);
+    const out = [];
+    const pretty = el("pre", { class: "json-pretty", hidden: "" });
+    const toggle = el("button", {
+      type: "button",
+      class: "json-toggle",
+      title: "Expand JSON",
+      "aria-expanded": "false",
+    }, ["▸ JSON"]);
+    toggle.addEventListener("click", () => {
+      const open = pretty.hidden;
+      pretty.hidden = !open;
+      toggle.textContent = open ? "▾ JSON" : "▸ JSON";
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      if (open && !pretty.textContent) pretty.textContent = JSON.stringify(jsonObj, null, 2);
+    });
+    out.push(toggle);
+    if (lvl) out.push(el("span", { class: "lvl-badge lvl-" + lvl }, [lvl]));
+    const summaryText = typeof jsonObj.msg === "string" ? jsonObj.msg : (typeof jsonObj.message === "string" ? jsonObj.message : str.trim());
+    if (summaryText !== str.trim()) {
+      for (const n of highlightNodes(summaryText, query)) out.push(n);
+      const rest = Object.entries(jsonObj)
+        .filter(([k]) => k !== "msg" && k !== "message" && k !== "level" && k !== "lvl" && k !== "severity" && k !== "time" && k !== "ts" && k !== "timestamp")
+        .slice(0, 6)
+        .map(([k, v]) => k + "=" + (typeof v === "string" ? v : JSON.stringify(v)))
+        .join(" ");
+      if (rest) {
+        out.push(el("span", { class: "ml-2 text-slate-400" }, highlightNodes(rest, query)));
+      }
+    } else {
+      for (const n of highlightNodes(str.trim(), query)) out.push(n);
+    }
+    out.push(pretty);
+    return out;
+  }
+  const out = [];
+  const lvl = detectTextLevel(str);
+  if (lvl === "error" || lvl === "warn") {
+    out.push(el("span", { class: "lvl-badge lvl-" + lvl }, [lvl]));
+  }
+  for (const n of renderANSI(str, query)) out.push(n);
+  return out;
+}
+
+function copyText(text, label) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(() => toast("Line copied")).catch(() => toast("Could not copy"));
+    navigator.clipboard.writeText(text).then(() => toast(label || "Copied")).catch(() => toast("Could not copy"));
     return;
   }
   toast("Clipboard unavailable");
 }
 
-function lineNode(ln, query) {
+function copyLogLine(ln) {
+  const target = ln.host_name ? ln.host_name + "/" + (ln.container_name || ln.container_id) : (ln.container_name || ln.container_id);
+  const text = (ln.timestamp || "") + " " + target + " " + ln.stream + " " + (ln.message || "");
+  copyText(text, "Line copied");
+}
+
+function lineNode(ln, query, formatted, multiHost) {
   const stderr = ln.stream === "stderr";
   const copyBtn = el("button", {
     type: "button",
@@ -705,14 +1239,19 @@ function lineNode(ln, query) {
     "aria-label": "Copy log line",
     onclick: () => copyLogLine(ln),
   }, [iconCopy()]);
+  const ctrName = ln.container_name || ln.container_id;
+  const targetChildren = multiHost && ln.host_name
+    ? [el("span", { class: "text-slate-400" }, [ln.host_name + " / "]), ctrName]
+    : [ctrName];
+  const targetTitle = multiHost && ln.host_name ? ln.host_name + " / " + ctrName : ctrName;
   return el("div", {
     class: "log-line log-cols font-mono text-[12px] transition-colors duration-150 ease-in-out hover:bg-white/[0.03]" + (stderr ? " stderr" : ""),
     "data-id": String(ln.id),
   }, [
     el("span", { class: "ts tabular-nums text-slate-400", title: fullTime(ln.timestamp) }, [formatTime(ln.timestamp)]),
-    el("span", { class: "name text-sand", title: ln.container_name || ln.container_id }, [ln.container_name || ln.container_id]),
+    el("span", { class: "name text-sand", title: targetTitle }, targetChildren),
     el("span", { class: "stream text-[11px] " + (stderr ? "text-clay" : "text-slate-400") }, [ln.stream]),
-    el("span", { class: "msg " + (stderr ? "text-clay" : "text-slate-200") }, highlightNodes(ln.message, query)),
+    el("span", { class: "msg " + (stderr ? "text-clay" : "text-slate-200") }, renderMessageNodes(ln.message, query, formatted !== false)),
     copyBtn,
   ]);
 }
@@ -762,10 +1301,11 @@ function initAdmin() {
   const generalForm = document.getElementById("save-general");
   const registrationForm = document.getElementById("save-registration");
   const directoryForm = document.getElementById("save-directory");
-  const sections = ["hosts", "general", "registration", "psk", "groups", "accounts", "directory"];
+  const sections = ["hosts", "general", "storage", "registration", "psk", "groups", "accounts", "directory"];
   let hosts = [];
   let groups = [];
   let savedSettings = null;
+  let serverVersion = "";
   let generalDirty = false;
   let registrationDirty = false;
   let directoryDirty = false;
@@ -780,6 +1320,15 @@ function initAdmin() {
   }
   window.addEventListener("hashchange", () => showSection(sectionFromHash()));
   showSection(sectionFromHash());
+
+  const compactBtn = document.getElementById("compact-db");
+  const refreshStorageBtn = document.getElementById("refresh-storage");
+  if (compactBtn) compactBtn.addEventListener("click", compactDatabase);
+  if (refreshStorageBtn) refreshStorageBtn.addEventListener("click", () => loadStorage(true));
+  api("/api/v1/meta").then((m) => {
+    serverVersion = (m && m.version) ? String(m.version) : "";
+    if (hosts.length && !hostList.contains(document.activeElement)) paintHosts();
+  }).catch(() => {});
 
   document.getElementById("create-group").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -804,6 +1353,7 @@ function initAdmin() {
           brand_name: document.getElementById("brand-name").value.trim(),
           brand_tagline: document.getElementById("brand-tagline").value.trim(),
           retention: document.getElementById("retention").value,
+          prune_exited: document.getElementById("prune-exited").value,
           session: document.getElementById("session-length").value,
           offline: document.getElementById("offline-after").value,
         }),
@@ -920,6 +1470,81 @@ function initAdmin() {
     }
     const main = document.querySelector(".admin-main");
     if (main) main.scrollTop = 0;
+    if (name === "storage") loadStorage(false);
+  }
+
+  async function loadStorage(notify) {
+    try {
+      const stats = await api("/api/v1/admin/storage");
+      paintStorage(stats);
+      if (notify) toast("Storage refreshed");
+    } catch (err) {
+      if (err.message !== "unauthorized") toast(err.message);
+    }
+  }
+
+  async function compactDatabase() {
+    if (!confirm("Compact the SQLite database now? Log ingestion may pause briefly while VACUUM runs.")) return;
+    const btn = document.getElementById("compact-db");
+    if (btn) btn.disabled = true;
+    const label = btn ? btn.textContent : "";
+    if (btn) btn.textContent = "Compacting...";
+    try {
+      const stats = await api("/api/v1/admin/storage/compact", { method: "POST", body: "{}" });
+      paintStorage(stats);
+      toast("Database compacted");
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    }
+  }
+
+  function paintStorage(s) {
+    if (!s) return;
+    const totalBytes = (s.db_bytes || 0) + (s.wal_bytes || 0);
+    document.getElementById("storage-size").textContent = formatBytes(totalBytes);
+    document.getElementById("storage-wal").textContent = "db " + formatBytes(s.db_bytes || 0) + " · wal " + formatBytes(s.wal_bytes || 0);
+    document.getElementById("storage-lines").textContent = Number(s.log_count || 0).toLocaleString();
+    const rangeEl = document.getElementById("storage-range");
+    if (s.oldest_log_at && s.newest_log_at) {
+      rangeEl.textContent = ago(s.oldest_log_at) + " → " + ago(s.newest_log_at);
+      rangeEl.title = fullTime(s.oldest_log_at) + " → " + fullTime(s.newest_log_at);
+    } else {
+      rangeEl.textContent = "No stored logs";
+      rangeEl.title = "";
+    }
+    document.getElementById("storage-hosts-count").textContent = String(s.host_count || 0);
+    document.getElementById("storage-containers").textContent = String(s.container_count || 0);
+    document.getElementById("storage-exited").textContent = (s.exited_count || 0) + " exited";
+
+    const list = document.getElementById("storage-per-host");
+    if (!list) return;
+    list.replaceChildren();
+    const rows = s.per_host || [];
+    if (!rows.length) {
+      list.append(el("div", { class: emptyRow }, ["No hosts yet."]));
+      return;
+    }
+    const maxCount = Math.max(1, ...rows.map((r) => r.log_count || 0));
+    const totalLines = Math.max(1, s.log_count || 0);
+    for (const r of rows) {
+      const name = String(r.display_name || "").trim() || r.hostname;
+      const pct = s.log_count ? Math.round(((r.log_count || 0) / totalLines) * 100) : 0;
+      const barPct = s.log_count ? Math.max(r.log_count ? 2 : 0, Math.round(((r.log_count || 0) / maxCount) * 100)) : 0;
+      const bar = el("div", { class: "h-1.5 rounded-full bg-amber-500/80" });
+      bar.style.width = barPct + "%";
+      list.append(el("div", { class: "border-b border-ink-line px-1 py-3" }, [
+        el("div", { class: "flex items-baseline justify-between gap-3" }, [
+          el("span", { class: "truncate text-[13px] font-medium text-slate-200" }, [name]),
+          el("span", { class: "shrink-0 font-mono text-[12px] tabular-nums text-slate-400" }, [Number(r.log_count || 0).toLocaleString() + " lines (" + pct + "%)"]),
+        ]),
+        el("div", { class: "mt-2 h-1.5 w-full overflow-hidden rounded-full bg-ink-chrome" }, [bar]),
+      ]));
+    }
   }
 
   async function loadFleet(force) {
@@ -1028,14 +1653,25 @@ function initAdmin() {
       }
     });
     const ctrCount = h.container_count + (h.container_count === 1 ? " container" : " containers") + (h.exited_count ? " (" + h.exited_count + " exited)" : "");
-    const meta = h.hostname + " · seen " + ago(h.last_seen_at) + (h.dropped ? " · dropped " + h.dropped : "") + " · " + ctrCount;
+    const metaParts = [h.hostname, "seen " + ago(h.last_seen_at)];
+    if (h.agent_version) metaParts.push("agent v" + h.agent_version);
+    if (h.docker_version) metaParts.push("docker " + h.docker_version);
+    if (h.dropped) metaParts.push("dropped " + h.dropped);
+    metaParts.push(ctrCount);
+    const metaChildren = [metaParts.join(" · ")];
+    if (h.agent_version && serverVersion && h.agent_version !== serverVersion) {
+      metaChildren.push(el("span", {
+        class: "ml-2 inline-block rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-amber-300",
+        title: "Server is v" + serverVersion,
+      }, ["update available"]));
+    }
     row.append(
       el("div", { class: "flex flex-wrap items-center gap-2" }, [
         el("span", { class: "min-w-0 flex-1 truncate text-[14px] font-medium text-slate-100" }, [hostLabel(h)]),
         statusBadge(h),
         el("div", { class: "flex shrink-0 gap-2" }, [statusBtn, deleteBtn]),
       ]),
-      el("div", { class: "mt-1 font-mono text-[12px] text-slate-500" }, [meta]),
+      el("div", { class: "mt-1 font-mono text-[12px] text-slate-500" }, metaChildren),
       el("div", { class: "mt-3 flex flex-wrap items-center gap-2" }, [nameInput, saveName]),
       el("div", { class: "mt-2" }, [sel]),
     );
@@ -1091,7 +1727,26 @@ function initAdmin() {
         : statusPill("bg-status-off", "text-slate-500", stateLabel);
       const infoParts = [];
       if (c.image) infoParts.push(c.image);
+      if (c.id) infoParts.push(c.id.length > 12 ? c.id.slice(0, 12) : c.id);
       if (c.last_seen_at) infoParts.push("seen " + ago(c.last_seen_at));
+      const leftNodes = [
+        el("div", { class: "truncate font-mono text-[12px] text-slate-200" }, [c.name]),
+        el("div", { class: "mt-0.5 truncate font-mono text-[11px] text-slate-500" }, [infoParts.join(" · ")]),
+      ];
+      const labelPairs = Object.entries(c.labels || {}).sort((a, b) => a[0].localeCompare(b[0]));
+      if (labelPairs.length) {
+        const tagWrap = el("div", { class: "mt-1.5 flex flex-wrap gap-1" });
+        for (const [k, v] of labelPairs.slice(0, 8)) {
+          tagWrap.append(el("span", {
+            class: "max-w-[18rem] truncate rounded border border-ink-edge bg-ink-field px-1.5 py-0.5 font-mono text-[10px] text-slate-400",
+            title: k + "=" + v,
+          }, [k + "=" + v]));
+        }
+        if (labelPairs.length > 8) {
+          tagWrap.append(el("span", { class: "font-mono text-[10px] text-slate-500" }, ["+" + (labelPairs.length - 8) + " more"]));
+        }
+        leftNodes.push(tagWrap);
+      }
       const right = [badge];
       if (!isLive) {
         const del = el("button", { type: "button", class: btnDanger }, ["Delete"]);
@@ -1101,10 +1756,7 @@ function initAdmin() {
       box.append(el("div", {
         class: "flex flex-wrap items-center gap-3 py-2" + (i < list.length - 1 ? " border-b border-ink-line" : ""),
       }, [
-        el("div", { class: "min-w-0 flex-1" }, [
-          el("div", { class: "truncate font-mono text-[12px] text-slate-200" }, [c.name]),
-          el("div", { class: "mt-0.5 truncate font-mono text-[11px] text-slate-500" }, [infoParts.join(" · ")]),
-        ]),
+        el("div", { class: "min-w-0 flex-1" }, leftNodes),
         el("div", { class: "flex shrink-0 items-center gap-2" }, right),
       ]));
     }
@@ -1266,6 +1918,7 @@ function initAdmin() {
       document.getElementById("brand-name").value = data.brand_name || "";
       document.getElementById("brand-tagline").value = data.brand_tagline || "";
       chooseDuration(document.getElementById("retention"), data.retention_ms);
+      chooseDuration(document.getElementById("prune-exited"), data.prune_exited_ms);
       chooseDuration(document.getElementById("session-length"), data.session_ms);
       chooseDuration(document.getElementById("offline-after"), data.offline_ms);
     }
@@ -1652,6 +2305,19 @@ function durationValue(ms) {
   if (sec % 3600 === 0) return (sec / 3600) + "h";
   if (sec % 60 === 0) return (sec / 60) + "m";
   return sec + "s";
+}
+
+function formatBytes(n) {
+  const bytes = Number(n) || 0;
+  if (bytes < 1024) return bytes + " B";
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = bytes / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return (v >= 10 ? v.toFixed(1) : v.toFixed(2)) + " " + units[i];
 }
 
 function downloadText(filename, text) {

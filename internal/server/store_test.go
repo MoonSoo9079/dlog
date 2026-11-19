@@ -607,3 +607,52 @@ func TestDeleteExitedContainers(t *testing.T) {
 		t.Fatalf("containers after offline delete: %+v %v", ctrs, err)
 	}
 }
+
+func TestPurgeExitedContainersAndStorage(t *testing.T) {
+	s := testStore(t)
+	host, _, err := s.CreateHost("store-host")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	live := protocol.Record{ContainerID: "live00000001", ContainerName: "live", Image: "app:1", Stream: "stdout", Timestamp: now, Message: "running"}
+	oldExited := protocol.Record{ContainerID: "old000000001", ContainerName: "old", Image: "busybox", Stream: "stdout", Timestamp: now.Add(-48 * time.Hour), Message: "old line"}
+	newExited := protocol.Record{ContainerID: "new000000001", ContainerName: "recent", Image: "busybox", Stream: "stdout", Timestamp: now.Add(-10 * time.Minute), Message: "recent line"}
+	if _, err := s.Ingest(host.ID, []protocol.Record{live, oldExited, newExited}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Heartbeat(host.ID, protocol.Heartbeat{
+		ReplaceContainers: true,
+		Containers:        []protocol.ContainerSnapshot{{ID: live.ContainerID, Name: live.ContainerName, Image: live.Image, State: "running"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Backdate oldExited last_seen_at so only oldExited qualifies for 24h auto-prune.
+	if _, err := s.db.Exec(`UPDATE containers SET last_seen_at=? WHERE container_id=?`, now.Add(-48*time.Hour).UnixMilli(), oldExited.ContainerID); err != nil {
+		t.Fatal(err)
+	}
+
+	stats, err := s.StorageStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.DBBytes <= 0 || stats.LogCount != 3 || stats.HostCount != 1 || stats.ContainerCount != 3 || stats.ExitedCount != 2 || len(stats.PerHost) != 1 || stats.PerHost[0].LogCount != 3 {
+		t.Fatalf("storage stats: %+v", stats)
+	}
+
+	n, err := s.PurgeExitedContainers(now.Add(-24 * time.Hour))
+	if err != nil || n != 1 {
+		t.Fatalf("purge exited: %d %v", n, err)
+	}
+	ctrs, err := s.Containers(host.ID)
+	if err != nil || len(ctrs) != 2 {
+		t.Fatalf("remaining containers: %+v %v", ctrs, err)
+	}
+	if err := s.Compact(); err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	stats2, err := s.StorageStats()
+	if err != nil || stats2.LogCount != 2 || stats2.ExitedCount != 1 {
+		t.Fatalf("stats after compact: %+v %v", stats2, err)
+	}
+}

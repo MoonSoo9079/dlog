@@ -35,7 +35,9 @@ var (
 
 type Store struct {
 	db             *sql.DB
+	dbPath         string
 	mu             sync.RWMutex
+	compactMu      sync.Mutex
 	settings       Settings
 	settingsLoaded bool
 }
@@ -102,7 +104,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	st := &Store{db: db}
+	st := &Store{db: db, dbPath: abs}
 	if err := st.loadSettings(); err != nil {
 		db.Close()
 		return nil, err

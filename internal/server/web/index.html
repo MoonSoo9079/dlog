@@ -32,6 +32,10 @@
           <span class="follow-lamp" aria-hidden="true"></span>
           Follow
         </button>
+        <div id="format-switch" class="inline-flex h-8 items-stretch overflow-hidden rounded-md border border-ink-edge bg-ink-field" role="group" aria-label="Log display format" title="Switch between ANSI/JSON formatted output and raw text">
+          <button type="button" id="fmt-formatted" class="fmt-seg is-active cursor-pointer px-2.5 text-[12px] font-medium transition-colors duration-150 ease-in-out" aria-pressed="true">Formatted</button>
+          <button type="button" id="fmt-raw" class="fmt-seg cursor-pointer border-l border-ink-edge px-2.5 text-[12px] font-medium transition-colors duration-150 ease-in-out" aria-pressed="false">Raw</button>
+        </div>
         <span class="mx-1 hidden h-4 w-px bg-ink-line sm:block" aria-hidden="true"></span>
         <a class="cursor-pointer rounded-md px-2.5 py-1.5 text-[13px] text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-100" href="/account">Account</a>
         <a id="admin-link" class="cursor-pointer rounded-md px-2.5 py-1.5 text-[13px] text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-100" href="/admin" hidden>Admin</a>
@@ -65,24 +69,20 @@
       </aside>
       <section id="log-pane" class="relative flex min-h-0 min-w-0 flex-1 flex-col bg-ink-bg">
         <div class="flex shrink-0 flex-col gap-2.5 border-b border-ink-line bg-ink-chrome px-4 py-3">
-          <div id="chips" class="flex min-w-0 items-center overflow-x-auto" role="toolbar" aria-label="Containers"></div>
+          <div id="chips-row" class="flex min-w-0 items-center gap-2">
+            <div id="chips" class="flex min-w-0 flex-1 items-center overflow-x-auto" role="toolbar" aria-label="Containers"></div>
+            <button type="button" id="container-info-btn" class="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-ink-edge bg-ink-field px-2.5 text-[12px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:border-slate-500 hover:text-slate-100" aria-expanded="false" aria-controls="container-info" hidden>Details</button>
+          </div>
+          <div id="container-info" class="rounded-md border border-ink-line bg-ink-field px-3 py-2.5 text-[12px] text-slate-300" hidden></div>
           <div class="flex flex-wrap items-center gap-2">
-            <div class="dlog-field inline-flex h-8 w-full items-stretch overflow-hidden rounded-md border border-ink-edge bg-ink-field transition-colors duration-150 ease-in-out sm:w-72">
-              <label for="q" class="flex cursor-pointer items-center border-r border-ink-edge px-2.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Filter</label>
-              <input id="q" class="min-w-0 flex-1 cursor-text bg-transparent px-2.5 font-mono text-[12px] text-slate-200 placeholder:text-slate-500 focus:outline-none" type="search" placeholder="Filter messages" autocomplete="off" spellcheck="false">
+            <div class="dlog-field inline-flex h-8 w-full items-stretch overflow-hidden rounded-md border border-ink-edge bg-ink-field transition-colors duration-150 ease-in-out sm:w-64">
+              <label for="q" class="flex cursor-pointer items-center border-r border-ink-edge px-2.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Search</label>
+              <input id="q" class="min-w-0 flex-1 cursor-text bg-transparent px-2.5 font-mono text-[12px] text-slate-200 placeholder:text-slate-500 focus:outline-none" type="search" placeholder="Search messages" autocomplete="off" spellcheck="false">
               <kbd class="pointer-events-none mr-2 hidden self-center border border-ink-edge px-1.5 py-0.5 font-mono text-[10px] text-slate-500 sm:inline" aria-hidden="true">/</kbd>
             </div>
             <div class="dlog-field inline-flex h-8 items-stretch overflow-hidden rounded-md border border-ink-edge bg-ink-field transition-colors duration-150 ease-in-out">
-              <label for="stream" class="flex cursor-pointer items-center border-r border-ink-edge px-2.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Stream</label>
-              <select id="stream" class="dlog-select min-w-[8.75rem] cursor-pointer pl-2.5 text-[12px] text-slate-200">
-                <option value="">All streams</option>
-                <option value="stdout">stdout</option>
-                <option value="stderr">stderr</option>
-              </select>
-            </div>
-            <div class="dlog-field inline-flex h-8 items-stretch overflow-hidden rounded-md border border-ink-edge bg-ink-field transition-colors duration-150 ease-in-out">
               <label for="range" class="flex cursor-pointer items-center border-r border-ink-edge px-2.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Time</label>
-              <select id="range" class="dlog-select min-w-[10.5rem] cursor-pointer pl-2.5 text-[12px] text-slate-200">
+              <select id="range" class="dlog-select min-w-[9.5rem] cursor-pointer pl-2.5 text-[12px] text-slate-200">
                 <option value="">All time</option>
                 <option value="15m">Last 15 minutes</option>
                 <option value="1h">Last hour</option>
@@ -90,14 +90,48 @@
               </select>
             </div>
             <input id="since" class="h-8 cursor-pointer rounded-md border border-ink-edge bg-ink-field px-2.5 font-mono text-[12px] text-slate-200 transition-colors duration-150 ease-in-out hover:border-slate-500 focus:border-amber-500/70 focus:outline-none" type="datetime-local" aria-label="Start time" hidden>
+            <button type="button" id="more-filters-btn" class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-ink-edge bg-ink-field px-2.5 text-[12px] font-medium text-slate-300 transition-colors duration-150 ease-in-out hover:border-slate-500 hover:text-slate-100" aria-expanded="false" aria-controls="more-filters">
+              <span>Filters</span>
+              <span id="more-filters-count" class="rounded-full bg-amber-500/20 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-amber-300" hidden></span>
+            </button>
             <button type="button" id="older" class="inline-flex h-8 cursor-pointer items-center rounded-md border border-ink-edge bg-ink-field px-3 text-[12px] font-medium text-slate-300 transition-colors duration-150 ease-in-out hover:border-slate-500 hover:text-slate-100">Older</button>
+            <select id="export-fmt" class="ui-select h-8 cursor-pointer rounded-md border border-ink-edge bg-ink-field pl-2.5 pr-7 text-[12px] font-medium text-slate-300 transition-colors duration-150 ease-in-out hover:border-slate-500 hover:text-slate-100" aria-label="Export logs">
+              <option value="">Export</option>
+              <option value="log">Download .log</option>
+              <option value="jsonl">Download .jsonl</option>
+            </select>
             <span id="logmeta" class="ml-auto whitespace-nowrap pl-2 text-right font-mono text-[12px] tabular-nums text-slate-400">Select a host</span>
+          </div>
+          <div id="more-filters" class="flex flex-wrap items-center gap-2 border-t border-ink-line pt-2.5" hidden>
+            <div class="dlog-field inline-flex h-8 w-full items-stretch overflow-hidden rounded-md border border-ink-edge bg-ink-field transition-colors duration-150 ease-in-out sm:w-52">
+              <label for="exclude" class="flex cursor-pointer items-center border-r border-ink-edge px-2.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Hide</label>
+              <input id="exclude" class="min-w-0 flex-1 cursor-text bg-transparent px-2.5 font-mono text-[12px] text-slate-200 placeholder:text-slate-500 focus:outline-none" type="search" placeholder="Exclude text" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="dlog-field inline-flex h-8 items-stretch overflow-hidden rounded-md border border-ink-edge bg-ink-field transition-colors duration-150 ease-in-out">
+              <label for="level" class="flex cursor-pointer items-center border-r border-ink-edge px-2.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Level</label>
+              <select id="level" class="dlog-select min-w-[7.25rem] cursor-pointer pl-2.5 text-[12px] text-slate-200">
+                <option value="">All levels</option>
+                <option value="error">Error</option>
+                <option value="warn">Warn</option>
+                <option value="info">Info</option>
+                <option value="debug">Debug</option>
+              </select>
+            </div>
+            <div class="dlog-field inline-flex h-8 items-stretch overflow-hidden rounded-md border border-ink-edge bg-ink-field transition-colors duration-150 ease-in-out">
+              <label for="stream" class="flex cursor-pointer items-center border-r border-ink-edge px-2.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Stream</label>
+              <select id="stream" class="dlog-select min-w-[8rem] cursor-pointer pl-2.5 text-[12px] text-slate-200">
+                <option value="">All streams</option>
+                <option value="stdout">stdout</option>
+                <option value="stderr">stderr</option>
+              </select>
+            </div>
+            <button type="button" id="clear-filters" class="inline-flex h-8 cursor-pointer items-center rounded-md px-2.5 text-[12px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-100" hidden>Clear filters</button>
           </div>
         </div>
         <div id="log-scroll" class="min-h-0 flex-1 overflow-auto bg-ink-bg" tabindex="-1">
           <div class="log-head log-cols sticky top-0 z-10 border-b border-ink-line bg-ink-bg font-sans text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">
             <span>Time</span>
-            <span>Container</span>
+            <span id="col-target">Container</span>
             <span>Stream</span>
             <span>Message</span>
           </div>

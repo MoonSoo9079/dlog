@@ -32,6 +32,7 @@
       <button type="button" id="nav-hosts" class="admin-nav-btn is-active shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Hosts</button>
       <span class="admin-nav-label hidden px-4 pb-1 pt-5 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500 md:block">Settings</span>
       <button type="button" id="nav-general" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">General</button>
+      <button type="button" id="nav-storage" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Storage</button>
       <button type="button" id="nav-registration" class="admin-nav-btn flex shrink-0 cursor-pointer appearance-none items-center justify-between gap-2 whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4"><span>Registration</span><span id="pending-badge" class="rounded-full bg-amber-500/20 px-1.5 py-0.5 font-mono text-[10px] font-medium tabular-nums text-amber-300" hidden></span></button>
       <button type="button" id="nav-psk" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Shared key</button>
       <button type="button" id="nav-groups" class="admin-nav-btn shrink-0 cursor-pointer appearance-none whitespace-nowrap rounded-md border-0 bg-transparent px-3 py-2 text-left text-[13px] font-medium text-slate-400 transition-colors duration-150 ease-in-out hover:bg-white/[0.04] hover:text-slate-200 md:w-full md:rounded-none md:px-4">Groups</button>
@@ -62,8 +63,8 @@
               </div>
             </div>
             <h2 class="mt-8 text-[15px] font-semibold text-slate-100">Logs and sessions</h2>
-            <p class="mt-2 text-[13px] leading-relaxed text-slate-400">Lines older than the retention window are deleted about once a minute. Keep logs stores them until you delete a host. A session stays signed in while the browser is in use, and each request extends it. A host looks offline when nothing has been heard for the offline window. Agents send a heartbeat every 15 seconds.</p>
-            <div class="mt-4 grid gap-4 sm:grid-cols-3">
+            <p class="mt-2 text-[13px] leading-relaxed text-slate-400">Lines older than the retention window are deleted about once a minute. Keep logs stores them until you delete a host or container. Optionally auto-remove exited containers after they stay inactive. A session stays signed in while the browser is in use, and a host looks offline when nothing has been heard for the offline window.</p>
+            <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="retention">Keep logs for</label>
                 <select id="retention" class="ui-select h-8 w-full cursor-pointer rounded-md border border-ink-edge bg-ink-field pl-2.5 pr-8 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out hover:border-slate-500 focus:border-amber-500/70 focus:outline-none">
@@ -72,6 +73,16 @@
                   <option value="30d">30 days</option>
                   <option value="90d">90 days</option>
                   <option value="0">Keep logs</option>
+                </select>
+              </div>
+              <div>
+                <label class="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400" for="prune-exited">Prune exited</label>
+                <select id="prune-exited" class="ui-select h-8 w-full cursor-pointer rounded-md border border-ink-edge bg-ink-field pl-2.5 pr-8 text-[13px] text-slate-200 transition-colors duration-150 ease-in-out hover:border-slate-500 focus:border-amber-500/70 focus:outline-none">
+                  <option value="0" selected>Manual only</option>
+                  <option value="1h">After 1 hour</option>
+                  <option value="1d">After 1 day</option>
+                  <option value="7d">After 7 days</option>
+                  <option value="30d">After 30 days</option>
                 </select>
               </div>
               <div>
@@ -96,6 +107,38 @@
             </div>
             <button type="submit" class="mt-6 inline-flex h-8 cursor-pointer items-center rounded-md border border-amber-500 bg-amber-500 px-3 text-[12px] font-medium text-[#1c1408] transition-colors duration-150 ease-in-out hover:bg-amber-400 disabled:cursor-default disabled:opacity-40">Save</button>
           </form>
+        </section>
+        <section id="panel-storage" hidden>
+          <h1 class="text-lg font-semibold tracking-tight text-slate-100">Storage</h1>
+          <p class="mt-2 max-w-3xl text-[13px] leading-relaxed text-slate-400">SQLite database usage on disk and stored line counts per host. Compacting checkpoints the write-ahead log and runs VACUUM to reclaim space freed by retention or deleted hosts and containers.</p>
+          <div class="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="rounded-md border border-ink-line bg-ink-chrome px-4 py-3.5">
+              <div class="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Database size</div>
+              <div id="storage-size" class="mt-1.5 font-mono text-[16px] font-medium tabular-nums text-slate-100">—</div>
+              <div id="storage-wal" class="mt-0.5 font-mono text-[11px] text-slate-500"></div>
+            </div>
+            <div class="rounded-md border border-ink-line bg-ink-chrome px-4 py-3.5">
+              <div class="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Stored lines</div>
+              <div id="storage-lines" class="mt-1.5 font-mono text-[16px] font-medium tabular-nums text-slate-100">—</div>
+              <div id="storage-range" class="mt-0.5 font-mono text-[11px] text-slate-500"></div>
+            </div>
+            <div class="rounded-md border border-ink-line bg-ink-chrome px-4 py-3.5">
+              <div class="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Hosts</div>
+              <div id="storage-hosts-count" class="mt-1.5 font-mono text-[16px] font-medium tabular-nums text-slate-100">—</div>
+              <div class="mt-0.5 text-[11px] text-slate-500">Registered hosts</div>
+            </div>
+            <div class="rounded-md border border-ink-line bg-ink-chrome px-4 py-3.5">
+              <div class="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Containers</div>
+              <div id="storage-containers" class="mt-1.5 font-mono text-[16px] font-medium tabular-nums text-slate-100">—</div>
+              <div id="storage-exited" class="mt-0.5 font-mono text-[11px] text-slate-500"></div>
+            </div>
+          </div>
+          <div class="mt-5 flex flex-wrap items-center gap-2">
+            <button type="button" id="compact-db" class="inline-flex h-8 cursor-pointer items-center rounded-md border border-amber-500/50 bg-transparent px-3 text-[12px] font-medium text-amber-300 transition-colors duration-150 ease-in-out hover:bg-amber-500/10 disabled:cursor-default disabled:opacity-40">Compact database</button>
+            <button type="button" id="refresh-storage" class="inline-flex h-8 cursor-pointer items-center rounded-md border border-ink-edge bg-ink-field px-3 text-[12px] font-medium text-slate-300 transition-colors duration-150 ease-in-out hover:border-slate-500 hover:text-slate-100">Refresh</button>
+          </div>
+          <h2 class="mt-8 text-[15px] font-semibold text-slate-100">Lines by host</h2>
+          <div id="storage-per-host" class="mt-3 border-t border-ink-line"></div>
         </section>
         <section id="panel-registration" hidden>
           <h1 class="text-lg font-semibold tracking-tight text-slate-100">Registration</h1>

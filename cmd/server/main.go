@@ -197,6 +197,14 @@ func purgeLoop(ctx context.Context, st *server.Store) {
 					slog.Info("purged logs", "rows", n)
 				}
 			}
+			if pruneExited := st.PruneExited(); pruneExited > 0 {
+				n, err := st.PurgeExitedContainers(time.Now().Add(-pruneExited))
+				if err != nil {
+					slog.Error("prune exited containers", "err", err)
+				} else if n > 0 {
+					slog.Info("pruned exited containers", "count", n)
+				}
+			}
 			if err := st.PurgeSessions(); err != nil {
 				slog.Error("purge sessions", "err", err)
 			}

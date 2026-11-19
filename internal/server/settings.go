@@ -19,6 +19,8 @@ const (
 	minOffline       = 30 * time.Second
 	maxOffline       = 15 * time.Minute
 	maxRetention     = 10 * 365 * 24 * time.Hour
+	minPruneExited   = time.Hour
+	maxPruneExited   = 365 * 24 * time.Hour
 
 	defaultLDAPFilter = "(uid=%s)"
 	defaultLDAPAttr   = "uid"
@@ -34,6 +36,7 @@ type Settings struct {
 	AutoRegister     bool   `json:"auto_register"`
 	DefaultGroupID   string `json:"default_group_id"`
 	RetentionMS      int64  `json:"retention_ms"`
+	PruneExitedMS    int64  `json:"prune_exited_ms"`
 	SessionMS        int64  `json:"session_ms"`
 	OfflineMS        int64  `json:"offline_ms"`
 	LDAPEnabled      bool   `json:"ldap_enabled"`
@@ -53,6 +56,17 @@ func (s Settings) Retention() time.Duration {
 		return 0
 	}
 	return time.Duration(s.RetentionMS) * time.Millisecond
+}
+
+func (s Settings) PruneExited() time.Duration {
+	if s.PruneExitedMS <= 0 {
+		return 0
+	}
+	d := time.Duration(s.PruneExitedMS) * time.Millisecond
+	if d < minPruneExited || d > maxPruneExited {
+		return 0
+	}
+	return d
 }
 
 func (s Settings) Session() time.Duration {
@@ -200,6 +214,11 @@ func (s *Store) Retention() time.Duration {
 	return s.settingsSnapshot().Retention()
 }
 
+// PruneExited is how long exited containers are kept before automatic removal. Zero keeps them.
+func (s *Store) PruneExited() time.Duration {
+	return s.settingsSnapshot().PruneExited()
+}
+
 func (s *Store) settingsSnapshot() Settings {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -242,6 +261,14 @@ func (s *Store) loadSettings() error {
 	if v, ok := raw["retention_ms"]; ok {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n >= 0 && time.Duration(n)*time.Millisecond <= maxRetention {
 			cfg.RetentionMS = n
+		}
+	}
+	if v, ok := raw["prune_exited_ms"]; ok {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n >= 0 {
+			d := time.Duration(n) * time.Millisecond
+			if n == 0 || (d >= minPruneExited && d <= maxPruneExited) {
+				cfg.PruneExitedMS = n
+			}
 		}
 	}
 	if v, ok := raw["session_ms"]; ok {
@@ -336,6 +363,7 @@ func (s *Store) SaveSettings(cfg Settings) error {
 		{"auto_register", auto},
 		{"default_group_id", cfg.DefaultGroupID},
 		{"retention_ms", strconv.FormatInt(cfg.RetentionMS, 10)},
+		{"prune_exited_ms", strconv.FormatInt(cfg.PruneExitedMS, 10)},
 		{"session_ms", strconv.FormatInt(cfg.SessionMS, 10)},
 		{"offline_ms", strconv.FormatInt(cfg.OfflineMS, 10)},
 		{"ldap_enabled", ldapEnabled},

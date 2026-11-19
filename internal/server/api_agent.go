@@ -87,10 +87,13 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		}
 		valid = append(valid, rec)
 	}
-	accepted, err := s.store.Ingest(host.ID, valid)
+	accepted, lines, err := s.store.IngestWithLines(host.ID, valid)
 	if err != nil {
 		writeStoreError(w, err)
 		return
+	}
+	if len(lines) > 0 && s.hub != nil {
+		s.hub.publish(lines)
 	}
 	if rejected > 0 {
 		slog.Warn("ingest rejected records", "host", host.Hostname, "rejected", rejected, "reason", first)

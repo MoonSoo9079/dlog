@@ -44,6 +44,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		AutoRegister          *bool   `json:"auto_register"`
 		DefaultGroupID        *string `json:"default_group_id"`
 		Retention             *string `json:"retention"`
+		PruneExited           *string `json:"prune_exited"`
 		Session               *string `json:"session"`
 		Offline               *string `json:"offline"`
 		LDAPEnabled           *bool   `json:"ldap_enabled"`
@@ -61,7 +62,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, statusForDecode(err), "bad request")
 		return
 	}
-	if body.BrandName == nil && body.BrandTagline == nil && body.AutoRegister == nil && body.DefaultGroupID == nil && body.Retention == nil && body.Session == nil && body.Offline == nil &&
+	if body.BrandName == nil && body.BrandTagline == nil && body.AutoRegister == nil && body.DefaultGroupID == nil && body.Retention == nil && body.PruneExited == nil && body.Session == nil && body.Offline == nil &&
 		body.LDAPEnabled == nil && body.LDAPURL == nil && body.LDAPStartTLS == nil && body.LDAPBindDN == nil && body.LDAPBindPassword == nil && body.LDAPClearBindPassword == nil &&
 		body.LDAPBaseDN == nil && body.LDAPUserFilter == nil && body.LDAPUsernameAttr == nil && body.LDAPAdminGroup == nil {
 		writeError(w, http.StatusBadRequest, "nothing to change")
@@ -104,6 +105,14 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		cfg.RetentionMS = d.Milliseconds()
+	}
+	if body.PruneExited != nil {
+		d, err := cli.Duration(strings.TrimSpace(*body.PruneExited), -1)
+		if err != nil || d < 0 || (d > 0 && (d < minPruneExited || d > maxPruneExited)) {
+			writeError(w, http.StatusBadRequest, "invalid prune exited window")
+			return
+		}
+		cfg.PruneExitedMS = d.Milliseconds()
 	}
 	if body.Session != nil {
 		d, err := cli.Duration(strings.TrimSpace(*body.Session), -1)

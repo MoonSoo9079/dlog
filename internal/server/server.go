@@ -17,6 +17,7 @@ const (
 
 type Server struct {
 	store        *Store
+	hub          *logHub
 	pskMu        sync.RWMutex
 	agentPSK     *agentcred.Key
 	pskIDPath    string
@@ -30,6 +31,7 @@ type Server struct {
 func New(store *Store, psk *agentcred.Key, trustProxy, secureCookie bool) *Server {
 	return &Server{
 		store:        store,
+		hub:          newLogHub(),
 		agentPSK:     psk,
 		trustProxy:   trustProxy,
 		secureCookie: secureCookie,
@@ -54,6 +56,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/hosts", s.operatorJSON(s.handleListHosts))
 	mux.HandleFunc("GET /api/v1/containers", s.operatorJSON(s.handleContainers))
 	mux.HandleFunc("GET /api/v1/logs", s.operatorJSON(s.handleLogs))
+	mux.HandleFunc("GET /api/v1/logs/stream", s.operatorJSON(s.handleLogStream))
+	mux.HandleFunc("GET /api/v1/logs/export", s.operatorJSON(s.handleLogExport))
 
 	mux.HandleFunc("GET /api/v1/admin/users", s.adminJSON(s.handleListUsers))
 	mux.HandleFunc("POST /api/v1/admin/users", s.adminJSON(s.handleCreateUser))
@@ -76,6 +80,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/admin/pending/{hostname}", s.adminJSON(s.handleDismissPending))
 	mux.HandleFunc("GET /api/v1/admin/psk", s.adminJSON(s.handlePSK))
 	mux.HandleFunc("POST /api/v1/admin/psk", s.adminJSON(s.handleReplacePSK))
+	mux.HandleFunc("GET /api/v1/admin/storage", s.adminJSON(s.handleStorage))
+	mux.HandleFunc("POST /api/v1/admin/storage/compact", s.adminJSON(s.handleCompactStorage))
 
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /admin", s.handleAdmin)

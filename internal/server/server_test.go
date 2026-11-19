@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -1067,6 +1069,200 @@ func TestSlidingLimitPrunesKeys(t *testing.T) {
 	}
 	if len(lim.hits) != 0 {
 		t.Fatalf("expired key leaked in map: %d", len(lim.hits))
+	}
+}
+
+func TestCrossHostExcludeLevelAndExport(t *testing.T) {
+	ts, st, _ := testServer(t)
+	client := noRedirect(t)
+	admin := login(t, client, ts.URL, "admin", testAdminPassword)
+
+	edge, err := st.CreateGroup("Edge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h1, _, err := st.CreateHost("node-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h2, _, err := st.CreateHost("node-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetHostGroup(h1.ID, edge.ID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if _, err := st.Ingest(h1.ID, []protocol.Record{
+		{ContainerID: "c11111111111", ContainerName: "api", Image: "api:1", Stream: "stdout", Timestamp: now.Add(-2 * time.Second), Message: "INFO healthcheck ok"},
+		{ContainerID: "c11111111111", ContainerName: "api", Image: "api:1", Stream: "stderr", Timestamp: now.Add(-time.Second), Message: "ERROR db timeout"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Ingest(h2.ID, []protocol.Record{
+		{ContainerID: "c22222222222", ContainerName: "worker", Image: "worker:1", Stream: "stdout", Timestamp: now, Message: "WARN queue lag"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Cross-host query for admin returns lines from both hosts with host_name populated.
+	res := do(t, client, http.MethodGet, ts.URL+"/api/v1/logs", admin, "")
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || !strings.Contains(string(body), "db timeout") || !strings.Contains(string(body), "queue lag") || !strings.Contains(string(body), `"host_name":"node-a"`) {
+		t.Fatalf("cross-host logs: %d %s", res.StatusCode, body)
+	}
+
+	// Exclude filter hides healthcheck.
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/logs?host_id="+h1.ID+"&exclude=healthcheck", admin, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || strings.Contains(string(body), "healthcheck") || !strings.Contains(string(body), "db timeout") {
+		t.Fatalf("exclude logs: %d %s", res.StatusCode, body)
+	}
+
+	// Level filter returns only matching level.
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/logs?level=error", admin, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || !strings.Contains(string(body), "db timeout") || strings.Contains(string(body), "queue lag") {
+		t.Fatalf("level logs: %d %s", res.StatusCode, body)
+	}
+
+	// Group query returns only hosts in Edge.
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/logs?group_id="+edge.ID, admin, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || !strings.Contains(string(body), "db timeout") || strings.Contains(string(body), "queue lag") {
+		t.Fatalf("group logs: %d %s", res.StatusCode, body)
+	}
+
+	// Scoped user cannot see h2 in cross-host queries.
+	ada, err := st.CreateUser("ada", "reader-password", RoleUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAccess(ada.ID, false, []string{edge.ID}); err != nil {
+		t.Fatal(err)
+	}
+	user := login(t, client, ts.URL, "ada", "reader-password")
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/logs", user, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || !strings.Contains(string(body), "db timeout") || strings.Contains(string(body), "queue lag") {
+		t.Fatalf("scoped cross-host logs: %d %s", res.StatusCode, body)
+	}
+
+	// Export .log and .jsonl
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/logs/export?format=log&level=warn", admin, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || !strings.Contains(res.Header.Get("Content-Disposition"), ".log") || !strings.Contains(string(body), "[node-b] [worker] [stdout] WARN queue lag") {
+		t.Fatalf("export log: %d %s", res.StatusCode, body)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/logs/export?format=jsonl&host_id="+h2.ID, admin, "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || !strings.Contains(res.Header.Get("Content-Disposition"), ".jsonl") || !strings.Contains(string(body), `"message":"WARN queue lag"`) {
+		t.Fatalf("export jsonl: %d %s", res.StatusCode, body)
+	}
+}
+
+func TestLiveSSELogStream(t *testing.T) {
+	ts, st, _ := testServer(t)
+	client := noRedirect(t)
+	admin := login(t, client, ts.URL, "admin", testAdminPassword)
+	host, hostToken, err := st.CreateHost("sse-host")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/api/v1/logs/stream?host_id="+host.ID+"&after_id=0", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: admin})
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 || !strings.Contains(res.Header.Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("sse headers: %d %s", res.StatusCode, res.Header.Get("Content-Type"))
+	}
+
+	reader := bufio.NewReader(res.Body)
+	// Read initial ": ok\n\n" comment so subscription is active.
+	line, err := reader.ReadString('\n')
+	if err != nil || !strings.HasPrefix(line, ": ok") {
+		t.Fatalf("sse init: %q %v", line, err)
+	}
+	_, _ = reader.ReadString('\n')
+
+	// Push a live line via HTTP ingest.
+	tsNow := time.Now().UTC().Format(time.RFC3339Nano)
+	payload := `{"agent_version":"0.3.0","records":[{"container_id":"sse111111111","container_name":"web","image":"nginx","stream":"stdout","timestamp":"` + tsNow + `","message":"live-sse-hello"}]}`
+	ing := do(t, client, http.MethodPost, ts.URL+"/api/v1/ingest", hostToken, payload)
+	ing.Body.Close()
+	if ing.StatusCode != 200 {
+		t.Fatalf("ingest: %d", ing.StatusCode)
+	}
+
+	var dataLine string
+	for {
+		l, err := reader.ReadString('\n')
+		if err != nil {
+			t.Fatalf("read sse: %v", err)
+		}
+		if strings.HasPrefix(l, "data: ") {
+			dataLine = l
+			break
+		}
+	}
+	if !strings.Contains(dataLine, "live-sse-hello") {
+		t.Fatalf("unexpected sse payload: %s", dataLine)
+	}
+}
+
+func TestAdminStorageAndPruneExited(t *testing.T) {
+	ts, st, _ := testServer(t)
+	client := noRedirect(t)
+	if _, err := st.CreateUser("ada", "reader-password", RoleUser); err != nil {
+		t.Fatal(err)
+	}
+	admin := login(t, client, ts.URL, "admin", testAdminPassword)
+	user := login(t, client, ts.URL, "ada", "reader-password")
+
+	res := do(t, client, http.MethodGet, ts.URL+"/api/v1/admin/storage", user, "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("user storage: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodGet, ts.URL+"/api/v1/admin/storage", admin, "")
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || !strings.Contains(string(body), `"db_bytes"`) {
+		t.Fatalf("admin storage: %d %s", res.StatusCode, body)
+	}
+	res = do(t, client, http.MethodPost, ts.URL+"/api/v1/admin/storage/compact", admin, "{}")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || !strings.Contains(string(body), `"log_count"`) {
+		t.Fatalf("compact: %d %s", res.StatusCode, body)
+	}
+
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/settings", admin, `{"prune_exited":"10m"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("short prune_exited: %d", res.StatusCode)
+	}
+	res = do(t, client, http.MethodPatch, ts.URL+"/api/v1/admin/settings", admin, `{"prune_exited":"7d"}`)
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || !strings.Contains(string(body), `"prune_exited_ms":604800000`) {
+		t.Fatalf("save prune_exited: %d %s", res.StatusCode, body)
 	}
 }
 
